@@ -46,96 +46,66 @@ io.on('connection', (socket) => {
 
     socket.on('join_room', (data) => {
         const roomId = data.roomId ? data.roomId.trim().toUpperCase() : '';
-        if (!rooms[roomId]) {
-            socket.emit('error_msg', '존재하지 않거나 만료된 방 코드입니다!');
-            return;
-        }
-        if (rooms[roomId].roomStatus !== 'waiting') {
-            socket.emit('error_msg', '이미 경매가 진행 중인 방입니다!');
-            return;
-        }
-        if (Object.keys(rooms[roomId].players).length >= 6) {
-            socket.emit('error_msg', '방이 꽉 찼습니다! (최대 6명)');
+        if (!rooms[roomId] || rooms[roomId].roomStatus !== 'waiting') {
+            socket.emit('error_msg', '유효하지 않거나 이미 시작된 방입니다!');
             return;
         }
         joinRoom(socket, roomId, data.name);
     });
 
     socket.on('reconnect_room', (data) => {
-        const { roomId, name } = data;
-        if (roomId && rooms[roomId]) {
-            joinRoom(socket, roomId, name);
+        if (data.roomId && rooms[data.roomId]) {
+            joinRoom(socket, data.roomId, data.name);
         } else {
-            socket.emit('error_msg', '세션이 만료되어 방을 찾을 수 없습니다.');
+            socket.emit('error_msg', '세션이 만료되었습니다.');
         }
     });
 
     socket.on('toggle_ready', () => {
-        const roomId = socket.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
+        const room = rooms[socket.roomId];
+        if (!room || socket.id === room.hostId) return;
         const player = room.players[socket.id];
-        if (player && socket.id !== room.hostId) {
+        if (player) {
             player.isReady = !player.isReady;
-            io.to(roomId).emit('update_game_state', room);
+            io.to(socket.roomId).emit('update_game_state', room);
         }
     });
 
     socket.on('start_game', () => {
-        const roomId = socket.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
-        if (socket.id !== room.hostId) return;
-
-        const players = Object.values(room.players);
-        if (players.length < 2) {
-            socket.emit('error_msg', '최소 2명 이상의 플레이어가 필요합니다!');
-            return;
-        }
-
-        const unreadyPlayers = players.filter(p => p.id !== room.hostId && !p.isReady);
-        if (unreadyPlayers.length > 0) {
-            socket.emit('error_msg', '모든 플레이어가 [게임 준비]를 완료해야 시작할 수 있습니다!');
-            return;
-        }
-
-        if (room.roomStatus === 'waiting') {
-            startNewRound(room);
-        }
+        const room = rooms[socket.roomId];
+        if (!room || socket.id !== room.hostId || room.roomStatus !== 'waiting') return;
+        startNewRound(room);
     });
 
-    // 입찰 제출 및 즉시 라운드 정산 판정 로직 수정
     socket.on('submit_bid', (bidAmount) => {
-        const roomId = socket.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
+        const room = rooms[socket.roomId];
+        if (!room || room.roomStatus !== 'bidding') return;
         const player = room.players[socket.id];
-        if (!player || room.roomStatus !== 'bidding') return;
+        if (!player) return;
 
-        const parsedBid = Number(bidAmount);
-        if (isNaN(parsedBid) || parsedBid < 0 || parsedBid > player.money) return;
+        const bid = Number(bidAmount);
+        if (isNaN(bid) || bid < 0 || bid > player.money) return;
 
-        player.bid = parsedBid;
-        io.to(roomId).emit('update_game_state', room);
+        player.bid = bid;
+        io.to(socket.roomId).emit('update_game_state', room);
 
-        // 방 안의 모든 플레이어가 입찰했는지 엄격하게 확인
-        const playersArr = Object.values(room.players);
-        const allSubmitted = playersArr.every(p => p.bid !== null && p.bid !== undefined);
+        // 모든 플레이어가 입찰했는지 체크 (타입 안정성 강화)
+        const players = Object.values(room.players);
+        const allDone = players.every(p => typeof p.bid === 'number');
 
-        if (allSubmitted && room.roomStatus === 'bidding') {
+        if (allDone) {
             if (room.roundTimer) clearInterval(room.roundTimer);
             resolveRound(room);
         }
     });
 
     socket.on('send_chat', (msg) => {
-        const roomId = socket.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
+        const room = rooms[socket.roomId];
+        if (!room || !msg || !msg.trim()) return;
         const player = room.players[socket.id];
-        if (!player || !msg || !msg.trim()) return;
+        if (!player) return;
 
-        io.to(roomId).emit('receive_chat', {
+        io.to(socket.roomId).emit('receive_chat', {
             id: socket.id,
             name: player.name,
             avatar: player.avatar,
@@ -144,139 +114,22 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('leave_room', () => {
-        handlePlayerLeave(socket);
-    });
-
-    socket.on('reset_or_destroy_room', () => {
-        const roomId = socket.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
-        if (socket.id !== room.hostId) return;
-
-        if (room.roundTimer) clearInterval(room.roundTimer);
-        io.to(roomId).emit('room_destroyed', '방장에 의해 방이 폭파(초기화)되었습니다.');
-        delete rooms[roomId];
-    });
-
-    socket.on('disconnect', () => {});
+    socket.on('leave_room', () => handleLeave(socket));
+    socket.on('disconnect', () => handleLeave(socket));
 });
 
 function joinRoom(socket, roomId, name) {
     socket.join(roomId);
     socket.roomId = roomId;
-
     const room = rooms[roomId];
-    const playerKeys = Object.keys(room.players);
-    const playerIndex = playerKeys.length;
+    const pKeys = Object.keys(room.players);
 
     room.players[socket.id] = {
         id: socket.id,
-        name: name || `딜러${playerIndex + 1}`,
-        avatar: AVATARS[playerIndex % AVATARS.length],
-        color: COLORS[playerIndex % COLORS.length],
-        money: 50,
-        score: 0,
-        bid: null,
-        isReady: socket.id === room.hostId
-    };
-
-    socket.emit('joined_room', { roomId: roomId, name: room.players[socket.id].name });
-    io.to(roomId).emit('update_game_state', room);
-}
-
-function handlePlayerLeave(socket) {
-    const roomId = socket.roomId;
-    if (roomId && rooms[roomId]) {
-        const room = rooms[roomId];
-        const wasHost = socket.id === room.hostId;
-        delete room.players[socket.id];
-
-        socket.leave(roomId);
-        socket.roomId = null;
-        socket.emit('left_room');
-
-        const remainingKeys = Object.keys(room.players);
-        if (remainingKeys.length === 0) {
-            if (room.roundTimer) clearInterval(room.roundTimer);
-            delete rooms[roomId];
-        } else {
-            if (wasHost) {
-                room.hostId = remainingKeys[0];
-                room.players[room.hostId].isReady = true;
-            }
-            io.to(roomId).emit('update_game_state', room);
-        }
-    }
-}
-
-function startNewRound(room) {
-    room.roomStatus = 'bidding';
-    Object.values(room.players).forEach(p => p.bid = null);
-    
-    io.to(room.roomId).emit('game_started', { roadmap: ROADMAP, timeLimit: 300 });
-    io.to(room.roomId).emit('update_game_state', room);
-
-    if (room.roundTimer) clearInterval(room.roundTimer);
-
-    let timeLeft = 300;
-    room.roundTimer = setInterval(() => {
-        timeLeft--;
-        io.to(room.roomId).emit('timer_update', timeLeft);
-
-        if (timeLeft <= 0) {
-            clearInterval(room.roundTimer);
-            Object.values(room.players).forEach(p => {
-                if (p.bid === null) p.bid = 0;
-            });
-            resolveRound(room);
-        }
-    }, 1000);
-}
-
-function resolveRound(room) {
-    if (room.roomStatus !== 'bidding') return; // 중복 실행 방지
-    room.roomStatus = 'revealing';
-
-    const item = ROADMAP[room.currentRound];
-    const players = Object.values(room.players);
-
-    players.sort((a, b) => b.bid - a.bid);
-    const winner = players[0];
-    let resultMsg = '';
-
-    if (item.type === 'highlight') {
-        const effects = ['x2', '/2', 'bankruptcy', 'power'];
-        const chosenEffect = effects[Math.floor(Math.random() * effects.length)];
-        winner.money -= winner.bid;
-
-        if (chosenEffect === 'x2') {
-            winner.score *= 2;
-            resultMsg = `🔥 ${winner.avatar} ${winner.name}님이 하이라이트 낙찰! [최종 점수 2배 잭팟!]`;
-        } else if (chosenEffect === '/2') {
-            winner.score = Math.floor(winner.score / 2);
-            resultMsg = `🔥 ${winner.avatar} ${winner.name}님이 하이라이트 낙찰! [반토막 저주 폭삭 ㅠㅠ]`;
-        } else if (chosenEffect === 'bankruptcy') {
-            winner.money = 0;
-            resultMsg = `🔥 ${winner.avatar} ${winner.name}님이 하이라이트 낙찰! [전 재산 파산 폭탄!]`;
-        } else {
-            winner.score += 30;
-            resultMsg = `🔥 ${winner.avatar} ${winner.name}님이 하이라이트 낙찰! [절대 권력 +30점 획득!]`;
-        }
-    } else {
-        let actualValue = item.value;
-        if (item.type === 'blind') {
-            actualValue = item.isFake ? item.fakeValue : item.value;
-        }
-
-        winner.money -= winner.bid;
-        winner.score += actualValue;
-
-        const itemTypeStr = item.type === 'blind' ? (item.isFake ? '가짜 위조품 🎭' : '대박 명작 💎') : '진품 미술품 🖼️';
-        resultMsg = `🏛️ ${winner.avatar} ${winner.name}님이 [${item.name}] 낙찰 (${winner.bid}P 지불) -> ${itemTypeStr} (${actualValue > 0 ? '+' + actualValue : actualValue}점)`;
+        name: name || `딜러${pKeys.length + 1}`, avatar: AVATARS[pKeys.length \% AVATARS.length], color: COLORS[pKeys.length \% COLORS.length], money: 50, score: 0, bid: null, isReady: socket.id === room.hostId };  socket.emit('joined_room', { roomId, name: room.players[socket.id].name }); io.to(roomId).emit('update_game_state', room); }  function handleLeave(socket) { const room = rooms[socket.roomId]; if (!room) return; delete room.players[socket.id]; socket.leave(socket.roomId);  if (Object.keys(room.players).length === 0) { if (room.roundTimer) clearInterval(room.roundTimer); delete rooms[socket.roomId]; } else { if (socket.id === room.hostId) { room.hostId = Object.keys(room.players)[0]; room.players[room.hostId].isReady = true; } io.to(socket.roomId).emit('update_game_state', room); } }  function startNewRound(room) { room.roomStatus = 'bidding'; Object.values(room.players).forEach(p => p.bid = null); io.to(room.roomId).emit('game_started', { roadmap: ROADMAP }); io.to(room.roomId).emit('update_game_state', room);  if (room.roundTimer) clearInterval(room.roundTimer); let time = 300; room.roundTimer = setInterval(() => { time--; io.to(room.roomId).emit('timer_update', time); if (time <= 0) { clearInterval(room.roundTimer); Object.values(room.players).forEach(p => { if (p.bid === null) p.bid = 0; }); resolveRound(room); } }, 1000); }  function resolveRound(room) { if (room.roomStatus !== 'bidding') return; room.roomStatus = 'revealing';  const item = ROADMAP[room.currentRound]; const players = Object.values(room.players); players.sort((a, b) => b.bid - a.bid); const winner = players[0];  winner.money -= winner.bid; let msg = '';  if (item.type === 'highlight') { winner.score += 30; msg = `🔥 ${winner.avatar} ${winner.name}님이 절대자의 캔버스 낙찰! (+30점)`; } else { let val = item.type === 'blind' ? (item.isFake ? item.fakeValue : item.value) : item.value; winner.score += val; msg = `🏛️ ${winner.avatar} ${winner.name}님이 [${item.name}] 낙찰 (${winner.bid}P) ->${val > 0 ? '+' + val : val}점`;
     }
 
-    io.to(room.roomId).emit('round_result', { resultMsg, roomState: room });
+    io.to(room.roomId).emit('round_result', { resultMsg: msg, roomState: room });
 
     setTimeout(() => {
         room.currentRound++;
@@ -286,10 +139,7 @@ function resolveRound(room) {
         } else {
             startNewRound(room);
         }
-    }, 4500);
+    }, 4000);
 }
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`[블라인드 마켓 서버 실행 중] http://localhost:${PORT}`);
-});
+server.listen(process.env.PORT || 3000);
