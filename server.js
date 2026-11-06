@@ -111,9 +111,17 @@ io.on('connection', (socket) => {
 function handleLogin(socket, roomId, name, token) {
     const room = rooms[roomId];
     let playerToken = token;
+    
     let existingPlayer = Object.values(room.players).find(p => p.token === playerToken);
 
-    if (!playerToken || !existingPlayer) {
+    if (!existingPlayer && name) {
+        existingPlayer = Object.values(room.players).find(p => p.name === name);
+        if (existingPlayer) {
+            playerToken = existingPlayer.token;
+        }
+    }
+
+    if (!existingPlayer) {
         playerToken = 'tok_' + Math.random().toString(36).substring(2, 9);
         const pKeys = Object.keys(room.players);
         
