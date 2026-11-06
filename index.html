@@ -136,6 +136,7 @@
 
         socket.on('left_room', () => {
             localStorage.removeItem('bm_room');
+            localStorage.removeItem('bm_token'); // 토큰도 초기화하여 깔끔하게 재시작
             location.href = '/';
         });
 
@@ -148,6 +149,7 @@
         socket.on('joined_room', (data) => {
             currentRoomId = data.roomId;
             localStorage.setItem('bm_room', currentRoomId);
+            localStorage.setItem('bm_token', data.token); // 서버가 인증/부여한 정확한 토큰으로 동기화
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('room-code-badge').innerText = currentRoomId;
