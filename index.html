@@ -25,7 +25,7 @@
             </div>
 
             <div class="flex gap-2 pt-2">
-                <button onclick="createRoom()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg shadow-amber-500/20 text-sm">
+                <button onclick="createRoom()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg text-sm">
                     방 만들기 🏠
                 </button>
                 <button onclick="joinRoom()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl transition shadow-lg text-sm">
@@ -114,7 +114,7 @@
                     <p class="text-slate-500 text-[11px] text-center">입장 완료! 심리전을 시작하세요.</p>
                 </div>
                 <div class="flex gap-1.5">
-                    <input type="text" id="chat-input" placeholder="메시지 입력..." onkeypress="if(event.key==='Enter') sendChat()"
+                    <input type="text" id="chat-input" placeholder="메시지 입력..." onkeypress="handleChatKeyPress(event)"
                         class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
                     <button onclick="sendChat()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-xl text-xs font-bold transition">전송</button>
                 </div>
@@ -128,7 +128,7 @@
         <div class="bg-slate-800 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-4">
             <h2 class="text-2xl sm:text-3xl font-black text-amber-400">🏆 갤러리 경매 종료!</h2>
             <div id="final-scoreboard" class="bg-slate-900/80 rounded-2xl p-4 text-left space-y-2"></div>
-            <button onclick="location.href='/'" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
+            <button onclick="clearSessionAndHome()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
                 로비로 돌아가기 🔄
             </button>
         </div>
@@ -139,9 +139,17 @@
         let mySocketId = '';
         let globalRoadmap = [];
         let currentRoomId = '';
+        let myName = '';
 
         socket.on('connect', () => {
             mySocketId = socket.id;
+
+            // 모바일에서 화면이 끊겼다가 재연결되었을 때, 로컬스토리지에 방 정보가 있다면 자동 재입장 시도
+            const savedRoom = localStorage.getItem('bm_room');
+            const savedName = localStorage.getItem('bm_name');
+            if (savedRoom && savedName && !currentRoomId) {
+                socket.emit('reconnect_room', { roomId: savedRoom, name: savedName });
+            }
         });
 
         window.onload = () => {
@@ -153,18 +161,18 @@
         };
 
         function createRoom() {
-            const name = document.getElementById('nickname-input').value.trim();
-            if (!name) {
+            myName = document.getElementById('nickname-input').value.trim();
+            if (!myName) {
                 alert('닉네임을 입력해주세요!');
                 return;
             }
-            socket.emit('create_room', { name: name });
+            socket.emit('create_room', { name: myName });
         }
 
         function joinRoom() {
-            const name = document.getElementById('nickname-input').value.trim();
+            myName = document.getElementById('nickname-input').value.trim();
             const roomId = document.getElementById('room-code-input').value.trim();
-            if (!name) {
+            if (!myName) {
                 alert('닉네임을 입력해주세요!');
                 return;
             }
@@ -172,13 +180,21 @@
                 alert('방 코드를 입력해주세요!');
                 return;
             }
-            socket.emit('join_room', { name: name, roomId: roomId });
+            socket.emit('join_room', { name: myName, roomId: roomId });
         }
 
         function leaveRoom() {
             if (confirm('정말 방을 나가시겠습니까?')) {
+                localStorage.removeItem('bm_room');
+                localStorage.removeItem('bm_name');
                 socket.emit('leave_room');
             }
+        }
+
+        function clearSessionAndHome() {
+            localStorage.removeItem('bm_room');
+            localStorage.removeItem('bm_name');
+            location.href = '/';
         }
 
         function destroyRoom() {
@@ -189,17 +205,27 @@
 
         socket.on('joined_room', (data) => {
             currentRoomId = data.roomId;
+            myName = data.name || myName;
+            
+            // 세션 정보 저장 (모바일 백그라운드 전환 대비)
+            localStorage.setItem('bm_room', currentRoomId);
+            localStorage.setItem('bm_name', myName);
+
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('room-code-badge').innerText = `방 코드: ${currentRoomId}`;
         });
 
         socket.on('left_room', () => {
+            localStorage.removeItem('bm_room');
+            localStorage.removeItem('bm_name');
             location.href = '/';
         });
 
         socket.on('room_destroyed', (msg) => {
             alert(msg);
+            localStorage.removeItem('bm_room');
+            localStorage.removeItem('bm_name');
             location.href = '/';
         });
 
@@ -225,6 +251,12 @@
             document.getElementById('bid-btn').disabled = true;
             document.getElementById('bid-btn').classList.add('opacity-50', 'cursor-not-allowed');
             document.getElementById('bid-status-text').innerText = '제출 완료! 대기중... 🔒';
+        }
+
+        function handleChatKeyPress(e) {
+            if (e.key === 'Enter') {
+                sendChat();
+            }
         }
 
         function sendChat() {
