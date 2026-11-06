@@ -15,8 +15,8 @@
             <input type="text" id="nickname-input" placeholder="닉네임" maxlength="10" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-white font-bold">
             <input type="text" id="room-code-input" placeholder="방 코드" maxlength="6" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-amber-300 font-mono font-bold uppercase">
             <div class="flex gap-2">
-                <button onclick="socket.emit('create_room', {name: document.getElementById('nickname-input').value})" class="flex-1 bg-amber-500 text-slate-950 font-black py-3 rounded-xl">방 만들기</button>
-                <button onclick="socket.emit('join_room', {name: document.getElementById('nickname-input').value, roomId: document.getElementById('room-code-input').value})" class="flex-1 bg-indigo-600 text-white font-black py-3 rounded-xl">참가</button>
+                <button onclick="createRoom()" class="flex-1 bg-amber-500 text-slate-950 font-black py-3 rounded-xl">방 만들기</button>
+                <button onclick="joinRoom()" class="flex-1 bg-indigo-600 text-white font-black py-3 rounded-xl">참가</button>
             </div>
         </div>
     </div>
@@ -46,7 +46,7 @@
                 <h2 id="room-master-notice" class="text-sm font-bold text-amber-300">준비 완료 후 시작하세요</h2>
                 <div id="action-buttons-container"></div>
             </div>
-            <div id="auction-display-panel" class="hidden space-y-1">
+            <div id="auction-display-panel" class="hidden space-y-1 w-full">
                 <span id="item-category" class="bg-indigo-500/20 text-indigo-300 text-[10px] px-2 py-0.5 rounded"></span>
                 <h2 id="item-name" class="text-xl font-black text-white"></h2>
                 <p id="item-desc" class="text-xs text-slate-400"></p>
@@ -82,7 +82,7 @@
         <div class="bg-slate-800 border border-slate-700 rounded-3xl p-6 max-w-md w-full text-center space-y-3">
             <h2 class="text-2xl font-black text-amber-400">게임 종료!</h2>
             <div id="final-scoreboard" class="text-left space-y-1"></div>
-            <button onclick="location.href='/'" class="w-full bg-indigo-600 py-3 rounded-xl font-bold">로비로</button>
+            <button onclick="clearSession()" class="w-full bg-indigo-600 py-3 rounded-xl font-bold">로비로</button>
         </div>
     </div>
 
@@ -91,19 +91,46 @@
         let currentRoomId = '';
         let globalRoadmap = [];
 
+        // 모바일 백그라운드 복귀 시 세션 자동 복구 로직
         socket.on('connect', () => {
-            const r = localStorage.getItem('bm_room');
-            const n = localStorage.getItem('bm_name');
-            if (r && n && !currentRoomId) socket.emit('reconnect_room', {roomId: r, name: n});
-            
-            const url = new URLSearchParams(location.search).get('room');
-            if (url) document.getElementById('room-code-input').value = url;
+            const savedRoom = localStorage.getItem('bm_room');
+            const savedName = localStorage.getItem('bm_name');
+            if (savedRoom && savedName) {
+                socket.emit('restore_session', { roomId: savedRoom, name: savedName });
+            }
+
+            const urlParams = new URLSearchParams(location.search).get('room');
+            if (urlParams) document.getElementById('room-code-input').value = urlParams;
         });
+
+        socket.on('force_home', () => {
+            clearSession();
+        });
+
+        function createRoom() {
+            const name = document.getElementById('nickname-input').value.trim();
+            if (!name) { alert('닉네임을 입력하세요'); return; }
+            localStorage.setItem('bm_name', name);
+            socket.emit('create_room', { name });
+        }
+
+        function joinRoom() {
+            const name = document.getElementById('nickname-input').value.trim();
+            const roomId = document.getElementById('room-code-input').value.trim();
+            if (!name || !roomId) { alert('닉네임과 방 코드를 입력하세요'); return; }
+            localStorage.setItem('bm_name', name);
+            socket.emit('join_room', { name, roomId });
+        }
+
+        function clearSession() {
+            localStorage.removeItem('bm_room');
+            localStorage.removeItem('bm_name');
+            location.href = '/';
+        }
 
         socket.on('joined_room', (data) => {
             currentRoomId = data.roomId;
             localStorage.setItem('bm_room', currentRoomId);
-            localStorage.setItem('bm_name', data.name);
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('room-code-badge').innerText = currentRoomId;
@@ -114,16 +141,10 @@
             document.getElementById('waiting-control-panel').classList.add('hidden');
             document.getElementById('auction-display-panel').classList.remove('hidden');
             document.getElementById('roadmap-wrapper').classList.remove('hidden');
-            
-            const input = document.getElementById('bid-input');
-            const btn = document.getElementById('bid-btn');
-            input.disabled = false; input.classList.remove('opacity-50');
-            btn.disabled = false; btn.classList.remove('opacity-50');
-            document.getElementById('bid-status-text').innerText = '입찰 가능';
         });
 
         socket.on('update_game_state', (state) => {
-            const isHost = socket.id === state.hostId;
+            const isHost = socket.id === state.hostSocketId;
             const me = state.players[socket.id];
 
             document.getElementById('players-status-bar').innerHTML = Object.values(state.players).map(p => `
@@ -132,7 +153,7 @@
                     <span class="${p.color} font-bold">${p.name}</span>
                     <span class="text-emerald-400">${p.money}P</span>
                     <span class="text-amber-300">${p.score}점</span>
-                    ${state.roomStatus === 'waiting' ? (p.id === state.hostId ? '방장' : (p.isReady ? '✅' : '⏳')) : (typeof p.bid === 'number' ? '🔒' : '⏳')}
+                    ${state.roomStatus === 'waiting' ? (p.id === state.hostSocketId ? '방장' : (p.isReady ? '✅' : '⏳')) : (typeof p.bid === 'number' ? '🔒' : '⏳')}
                 </div>
             `).join('');
 
@@ -149,6 +170,19 @@
             if (me) {
                 document.getElementById('my-money').innerText = me.money + 'P';
                 document.getElementById('my-score').innerText = me.score + '점';
+                
+                // 입찰 버튼 및 입력창 상태 제어 (핵심 수정)
+                const input = document.getElementById('bid-input');
+                const btn = document.getElementById('bid-btn');
+                if (state.roomStatus === 'bidding' && me.bid === null) {
+                    input.disabled = false; input.classList.remove('opacity-50');
+                    btn.disabled = false; btn.classList.remove('opacity-50');
+                    document.getElementById('bid-status-text').innerText = '입찰 가능';
+                } else {
+                    input.disabled = true; input.classList.add('opacity-50');
+                    btn.disabled = true; btn.classList.add('opacity-50');
+                    if (me.bid !== null) document.getElementById('bid-status-text').innerText = '제출 완료 🔒';
+                }
             }
 
             if (state.roomStatus === 'bidding' || state.roomStatus === 'revealing') {
@@ -171,9 +205,6 @@
             const box = document.getElementById('announcement-box');
             box.innerText = data.resultMsg;
             box.classList.remove('hidden');
-            const btn = document.getElementById('bid-btn');
-            btn.disabled = false; btn.classList.remove('opacity-50');
-            document.getElementById('bid-status-text').innerText = '입찰 가능';
             setTimeout(() => box.classList.add('hidden'), 3500);
         });
 
@@ -189,9 +220,6 @@
             const val = parseInt(document.getElementById('bid-input').value);
             if (isNaN(val)) return;
             socket.emit('submit_bid', val);
-            const btn = document.getElementById('bid-btn');
-            btn.disabled = true; btn.classList.add('opacity-50');
-            document.getElementById('bid-status-text').innerText = '제출 완료 🔒';
         }
 
         function sendChat() {
