@@ -70,10 +70,10 @@
             </div>
 
             <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3 flex flex-col h-40 md:h-auto">
-                <div id="chat-messages" class="flex-1 overflow-y-auto text-xs space-y-1 mb-2"></div>
+                <div id="chat-messages" class="flex-1 overflow-y-auto text-sm space-y-1.5 mb-2 pr-1"></div>
                 <div class="flex gap-1">
-                    <input type="text" id="chat-input" placeholder="채팅 입력..." onkeypress="if(event.key==='Enter')sendChat()" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs">
-                    <button onclick="sendChat()" class="bg-slate-700 px-3 py-1.5 rounded-xl text-xs">전송</button>
+                    <input type="text" id="chat-input" placeholder="채팅 입력..." onkeypress="if(event.key==='Enter')sendChat()" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs">
+                    <button onclick="sendChat()" class="bg-slate-700 px-3 py-2 rounded-xl text-xs font-bold">전송</button>
                 </div>
             </div>
         </div>
@@ -136,7 +136,7 @@
 
         socket.on('left_room', () => {
             localStorage.removeItem('bm_room');
-            localStorage.removeItem('bm_token'); // 토큰도 초기화하여 깔끔하게 재시작
+            localStorage.removeItem('bm_token');
             location.href = '/';
         });
 
@@ -149,7 +149,7 @@
         socket.on('joined_room', (data) => {
             currentRoomId = data.roomId;
             localStorage.setItem('bm_room', currentRoomId);
-            localStorage.setItem('bm_token', data.token); // 서버가 인증/부여한 정확한 토큰으로 동기화
+            localStorage.setItem('bm_token', data.token);
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('room-code-badge').innerText = currentRoomId;
@@ -160,7 +160,18 @@
             document.getElementById('waiting-control-panel').classList.add('hidden');
             document.getElementById('auction-display-panel').classList.remove('hidden');
             document.getElementById('roadmap-wrapper').classList.remove('hidden');
+            renderRoadmapBar(0);
         });
+
+        function renderRoadmapBar(currentIndex) {
+            const bar = document.getElementById('roadmap-bar');
+            if (!globalRoadmap || globalRoadmap.length === 0) return;
+            bar.innerHTML = globalRoadmap.map((item, idx) => `
+                <div class="px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap border ${idx === currentIndex ? 'bg-indigo-600 border-indigo-400 text-white' : (idx < currentIndex ? 'bg-slate-900 border-slate-700 text-slate-500 line-through' : 'bg-slate-900 border-slate-700 text-slate-300')}">
+                    ${idx + 1}. ${item.name}
+                </div>
+            `).join('');
+        }
 
         socket.on('update_game_state', (state) => {
             const myToken = getMyToken();
@@ -168,22 +179,22 @@
             const me = Object.values(state.players).find(p => p.token === myToken);
 
             document.getElementById('players-status-bar').innerHTML = Object.values(state.players).map(p => `
-                <div class="bg-slate-900 border border-slate-700 px-2 py-1 rounded-lg text-xs flex gap-1 items-center shrink-0">
-                    <span>${p.avatar}</span>
+                <div class="bg-slate-900 border border-slate-700 px-2.5 py-1 rounded-lg text-xs flex gap-1.5 items-center shrink-0">
+                    <span class="text-base">${p.avatar}</span>
                     <span class="${p.color} font-bold">${p.name}</span>
-                    <span class="text-emerald-400">${p.money}P</span>
-                    <span class="text-amber-300">${p.score}점</span>
-                    ${state.roomStatus === 'waiting' ? (p.token === state.hostToken ? '방장' : (p.isReady ? '✅' : '⏳')) : (typeof p.bid === 'number' ? '🔒' : '⏳')}
+                    <span class="text-emerald-400 font-semibold">${p.money}P</span>
+                    <span class="text-amber-300 font-semibold">${p.score}점</span>
+                    ${state.roomStatus === 'waiting' ? (p.token === state.hostToken ? '<span class="text-amber-400 font-bold ml-1">방장</span>' : (p.isReady ? '✅' : '⏳')) : (typeof p.bid === 'number' ? '🔒' : '⏳')}
                 </div>
             `).join('');
 
             if (state.roomStatus === 'waiting') {
                 const ac = document.getElementById('action-buttons-container');
                 if (isHost) {
-                    ac.innerHTML = `<button onclick="socket.emit('start_game', '${myToken}')" class="w-full bg-indigo-600 py-2.5 rounded-xl font-bold">게임 시작</button>`;
+                    ac.innerHTML = `<button onclick="socket.emit('start_game', '${myToken}')" class="w-full bg-indigo-600 hover:bg-indigo-500 py-3 rounded-xl font-black text-white text-base shadow-lg transition">게임 시작</button>`;
                 } else {
                     const ready = me && me.isReady;
-                    ac.innerHTML = `<button onclick="socket.emit('toggle_ready', '${myToken}')" class="w-full ${ready ? 'bg-rose-600' : 'bg-emerald-600'} py-2.5 rounded-xl font-bold">${ready ? '준비 취소' : '준비 완료'}</button>`;
+                    ac.innerHTML = `<button onclick="socket.emit('toggle_ready', '${myToken}')" class="w-full ${ready ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500'} py-3 rounded-xl font-black text-white text-base shadow-lg transition">${ready ? '준비 취소' : '준비 완료'}</button>`;
                 }
             }
 
@@ -205,6 +216,8 @@
             }
 
             if (state.roomStatus === 'bidding' || state.roomStatus === 'revealing') {
+                document.getElementById('roadmap-wrapper').classList.remove('hidden');
+                renderRoadmapBar(state.currentRound);
                 const item = globalRoadmap[state.currentRound];
                 if (item) {
                     document.getElementById('item-category').innerText = item.category;
@@ -216,7 +229,7 @@
             if (state.roomStatus === 'ended') {
                 document.getElementById('game-over-modal').classList.remove('hidden');
                 let players = Object.values(state.players).sort((a,b)=>b.score-a.score);
-                document.getElementById('final-scoreboard').innerHTML = players.map((p,i)=>`<div class="flex justify-between py-1 border-b border-slate-700"><span>${i+1}위: ${p.name}</span><span>${p.score}점 (${p.money}P)</span></div>`).join('');
+                document.getElementById('final-scoreboard').innerHTML = players.map((p,i)=>`<div class="flex justify-between py-1.5 border-b border-slate-700 text-sm"><span>${i+1}위: ${p.avatar} ${p.name}</span><span class="font-bold text-amber-300">${p.score}점 (${p.money}P)</span></div>`).join('');
             }
         });
 
@@ -229,7 +242,7 @@
 
         socket.on('receive_chat', (data) => {
             const box = document.getElementById('chat-messages');
-            box.innerHTML += `<div class="text-[11px]"><span class="${data.color} font-bold">${data.name}:</span> ${data.message}</div>`;
+            box.innerHTML += `<div class="text-sm py-0.5 leading-relaxed"><span class="${data.color} font-bold">${data.avatar} ${data.name}:</span> <span class="text-slate-100">${data.message}</span></div>`;
             box.scrollTop = box.scrollHeight;
         });
 
