@@ -25,10 +25,11 @@ const AVATARS = ['🎨', '🎭', '🗿', '🖼️', '🖌️', '💎'];
 const COLORS = ['text-amber-400', 'text-indigo-400', 'text-pink-400', 'text-emerald-400', 'text-cyan-400', 'text-purple-400'];
 
 let gameState = {
-    roomStatus: 'waiting', 
+    roomStatus: 'waiting', // waiting, bidding, revealing, ended
     currentRound: 0,
     players: {}, 
-    bidsSubmittedCount: 0
+    bidsSubmittedCount: 0,
+    hostId: null // 방장 소켓 ID
 };
 
 let roundTimer = null;
@@ -36,6 +37,11 @@ const ROUND_TIME_LIMIT = 300; // 5분 (300초)
 
 io.on('connection', (socket) => {
     console.log(`플레이어 접속: ${socket.id}`);
+
+    // 첫 번째로 들어온 사람이 자동으로 방장이 됨
+    if (!gameState.hostId && gameState.roomStatus === 'waiting') {
+        gameState.hostId = socket.id;
+    }
 
     socket.on('join_game', (data) => {
         const playerKeys = Object.keys(gameState.players);
@@ -52,14 +58,26 @@ io.on('connection', (socket) => {
             color: COLORS[playerIndex % COLORS.length],
             money: 50,
             score: 0,
-            bid: null
+            bid: null,
+            isReady: socket.id === gameState.hostId // 방장은 자동 준비
         };
 
         io.emit('update_game_state', gameState);
     });
 
-    // 2인 이상일 때만 게임 시작 가능하도록 검증 로직 추가
+    // 준비 토글 (레디 버튼)
+    socket.on('toggle_ready', () => {
+        const player = gameState.players[socket.id];
+        if (player && socket.id !== gameState.hostId) {
+            player.isReady = !player.isReady;
+            io.emit('update_game_state', gameState);
+        }
+    });
+
+    // 방장 전용 시작 버튼
     socket.on('start_game', () => {
+        if (socket.id !== gameState.hostId) return;
+
         const playerKeys = Object.keys(gameState.players);
         if (playerKeys.length < 2) {
             socket.emit('error_msg', '최소 2명 이상의 플레이어가 필요합니다!');
@@ -106,16 +124,24 @@ io.on('connection', (socket) => {
 
     socket.on('disconnect', () => {
         if (gameState.players[socket.id]) {
+            const wasHost = socket.id === gameState.hostId;
             delete gameState.players[socket.id];
-            io.emit('update_game_state', gameState);
             console.log(`플레이어 퇴장: ${socket.id}`);
 
-            if (Object.keys(gameState.players).length === 0) {
+            const remainingKeys = Object.keys(gameState.players);
+            if (remainingKeys.length === 0) {
                 gameState.roomStatus = 'waiting';
                 gameState.currentRound = 0;
                 gameState.bidsSubmittedCount = 0;
+                gameState.hostId = null;
                 if (roundTimer) clearInterval(roundTimer);
+            } else if (wasHost) {
+                // 방장이 나가면 남은 사람 중 첫 번째 사람에게 방장 위임
+                gameState.hostId = remainingKeys[0];
+                gameState.players[gameState.hostId].isReady = true;
             }
+
+            io.emit('update_game_state', gameState);
         }
     });
 });
@@ -137,7 +163,6 @@ function startNewRound() {
 
         if (timeLeft <= 0) {
             clearInterval(roundTimer);
-            // 5분 내 미제출자는 자동 0원 처리
             Object.values(gameState.players).forEach(p => {
                 if (p.bid === null) {
                     p.bid = 0;
