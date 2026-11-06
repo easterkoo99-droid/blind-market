@@ -3,272 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>블라인드 마켓: 아트 갤러리</title>
+    <title>블라인드 마켓</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-between p-2 sm:p-4 font-sans overflow-x-hidden">
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-between p-2 sm:p-4 font-sans">
 
-    <!-- 1. 로비 / 방 생성 및 참가 화면 -->
     <div id="login-screen" class="fixed inset-0 bg-slate-950 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl space-y-5">
-            <div>
-                <h1 class="text-3xl font-black text-amber-400 mb-1">🎨 블라인드 마켓</h1>
-                <p class="text-xs text-slate-400">아트 갤러리 밀봉 경매 & 심리전</p>
-            </div>
-            
-            <div class="space-y-3 pt-2">
-                <input type="text" id="nickname-input" placeholder="내 닉네임 입력" maxlength="10"
-                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-white font-bold focus:outline-none focus:border-amber-400">
-                <input type="text" id="room-code-input" placeholder="방 코드 (초대 링크면 자동 입력)" maxlength="6"
-                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-amber-300 font-mono font-bold uppercase focus:outline-none focus:border-amber-400">
-            </div>
-
-            <div class="flex gap-2 pt-2">
-                <button onclick="createRoom()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg text-sm">
-                    방 만들기 🏠
-                </button>
-                <button onclick="joinRoom()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl transition shadow-lg text-sm">
-                    참가하기 🚪
-                </button>
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-sm w-full text-center space-y-4">
+            <h1 class="text-2xl font-black text-amber-400">🎨 블라인드 마켓</h1>
+            <input type="text" id="nickname-input" placeholder="닉네임" maxlength="10" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-white font-bold">
+            <input type="text" id="room-code-input" placeholder="방 코드" maxlength="6" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-amber-300 font-mono font-bold uppercase">
+            <div class="flex gap-2">
+                <button onclick="socket.emit('create_room', {name: document.getElementById('nickname-input').value})" class="flex-1 bg-amber-500 text-slate-950 font-black py-3 rounded-xl">방 만들기</button>
+                <button onclick="socket.emit('join_room', {name: document.getElementById('nickname-input').value, roomId: document.getElementById('room-code-input').value})" class="flex-1 bg-indigo-600 text-white font-black py-3 rounded-xl">참가</button>
             </div>
         </div>
     </div>
 
-    <!-- 2. 통합 게임방 화면 -->
     <div id="game-screen" class="w-full max-w-3xl flex-1 flex flex-col gap-2.5 my-1 hidden">
-        
-        <header class="bg-slate-800/95 backdrop-blur border border-slate-700 rounded-2xl p-3 sm:p-4 shadow-lg flex flex-col gap-2.5">
-            <div class="flex flex-wrap justify-between items-center gap-2">
-                <div class="flex flex-col">
-                    <div class="flex items-center gap-1.5 flex-wrap">
-                        <h1 class="text-base sm:text-lg font-black text-amber-400 tracking-wider">🎨 블라인드 마켓</h1>
-                        <span id="room-code-badge" class="bg-slate-900 border border-slate-700 text-amber-300 text-[10px] px-2 py-0.5 rounded-md font-mono font-bold">방 코드: ------</span>
-                        <button onclick="copyInviteLink()" class="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded-md font-bold transition">초대링크 복사 🔗</button>
-                        <button onclick="leaveRoom()" class="text-[10px] bg-rose-600 hover:bg-rose-500 text-white px-2 py-1 rounded-md font-bold transition">방 나가기 🚪</button>
-                    </div>
-                    <div class="flex items-center gap-2 mt-1">
-                        <p id="round-title" class="text-xs text-slate-400">참가자 준비 대기 중...</p>
-                        <span id="timer-badge" class="hidden bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">⏱️ 05:00</span>
-                    </div>
+        <header class="bg-slate-800 border border-slate-700 rounded-2xl p-3 flex flex-col gap-2">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <h1 class="font-black text-amber-400">블라인드 마켓</h1>
+                    <span id="room-code-badge" class="bg-slate-900 text-amber-300 text-[10px] px-2 py-0.5 rounded font-mono"></span>
+                    <button onclick="navigator.clipboard.writeText(location.origin + '/?room=' + currentRoomId); alert('링크 복사 완료!');" class="bg-indigo-600 text-[10px] px-2 py-1 rounded">초대링크</button>
                 </div>
-                
-                <div class="flex gap-2">
-                    <div class="bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-700 text-right min-w-[70px]">
-                        <span class="text-[9px] text-slate-400 block">내 자금</span>
-                        <span id="my-money" class="text-sm sm:text-base font-bold text-emerald-400">50 P</span>
-                    </div>
-                    <div class="bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-700 text-right min-w-[70px]">
-                        <span class="text-[9px] text-slate-400 block">내 점수</span>
-                        <span id="my-score" class="text-sm sm:text-base font-bold text-amber-300">0 점</span>
-                    </div>
+                <div class="flex gap-2 text-xs">
+                    <div>자금: <span id="my-money" class="text-emerald-400 font-bold">50P</span></div>
+                    <div>점수: <span id="my-score" class="text-amber-300 font-bold">0점</span></div>
                 </div>
             </div>
-            <div id="players-status-bar" class="flex gap-2 overflow-x-auto pt-1 border-t border-slate-700/60 pb-1"></div>
+            <div id="players-status-bar" class="flex gap-2 overflow-x-auto border-t border-slate-700 pt-2"></div>
         </header>
 
-        <div id="roadmap-wrapper" class="bg-slate-800/50 border border-slate-700/80 rounded-xl p-2 hidden">
-            <div id="roadmap-bar" class="flex gap-1.5 overflow-x-auto pb-1"></div>
+        <div id="roadmap-wrapper" class="bg-slate-800/50 border border-slate-700 rounded-xl p-2 hidden">
+            <div id="roadmap-bar" class="flex gap-1.5 overflow-x-auto"></div>
         </div>
 
-        <div id="center-display-area" class="bg-gradient-to-b from-slate-800 to-slate-850 border-2 border-slate-700 rounded-2xl p-5 flex flex-col items-center justify-center text-center relative shadow-xl min-h-[160px]">
-            <div id="waiting-control-panel" class="flex flex-col items-center gap-3 w-full">
-                <h2 id="room-master-notice" class="text-sm sm:text-base font-bold text-amber-300 px-2">모든 플레이어가 준비하면 시작할 수 있습니다!</h2>
-                <div id="action-buttons-container" class="flex flex-col sm:flex-row gap-2 w-full max-w-sm"></div>
+        <div class="bg-slate-800 border border-slate-700 rounded-2xl p-5 text-center relative min-h-[140px] flex flex-col justify-center items-center">
+            <div id="waiting-control-panel" class="space-y-3 w-full">
+                <h2 id="room-master-notice" class="text-sm font-bold text-amber-300">준비 완료 후 시작하세요</h2>
+                <div id="action-buttons-container"></div>
             </div>
-
-            <div id="auction-display-panel" class="hidden flex flex-col items-center w-full">
-                <span id="item-category" class="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">공개 미술품</span>
-                <div class="my-2">
-                    <h2 id="item-name" class="text-xl sm:text-2xl font-black text-white mb-1">모네의 수련 🖼️</h2>
-                    <p id="item-desc" class="text-xs text-slate-400">안정적인 가치를 지닌 진품 미술품 (+10점)</p>
-                </div>
-                <div id="announcement-box" class="hidden mt-2 text-amber-300 font-bold text-xs bg-amber-500/10 border border-amber-500/30 px-4 py-1.5 rounded-lg"></div>
+            <div id="auction-display-panel" class="hidden space-y-1">
+                <span id="item-category" class="bg-indigo-500/20 text-indigo-300 text-[10px] px-2 py-0.5 rounded"></span>
+                <h2 id="item-name" class="text-xl font-black text-white"></h2>
+                <p id="item-desc" class="text-xs text-slate-400"></p>
+                <div id="announcement-box" class="hidden text-amber-300 text-xs font-bold mt-2"></div>
             </div>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 flex-1">
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg">
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3 flex flex-col justify-between">
                 <div>
-                    <div class="flex justify-between items-center mb-2">
-                        <label class="text-xs font-semibold text-slate-300">비밀 입찰 금액 (0원 입력 시 기권)</label>
-                        <span id="bid-status-text" class="text-xs text-slate-500 font-bold">게임 대기 중</span>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span>입찰 금액</span>
+                        <span id="bid-status-text" class="text-slate-400">대기 중</span>
                     </div>
-                    <div class="flex gap-2 mb-2">
-                        <input type="number" id="bid-input" min="0" value="10" disabled
-                            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-base sm:text-lg font-bold text-white opacity-50 focus:outline-none">
-                        <button onclick="submitBid()" id="bid-btn" disabled
-                            class="bg-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl transition opacity-50 cursor-not-allowed text-sm">
-                            제출 🤫
-                        </button>
+                    <div class="flex gap-2">
+                        <input type="number" id="bid-input" min="0" value="10" disabled class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 font-bold opacity-50">
+                        <button onclick="submitBid()" id="bid-btn" disabled class="bg-indigo-600 text-white px-4 py-2 rounded-xl opacity-50">제출</button>
                     </div>
-                </div>
-                <div class="text-[10px] sm:text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
-                    💡 다른 사람의 입찰가는 보이지 않습니다. 채팅창으로 심리전을 시전하세요!
                 </div>
             </div>
 
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3.5 flex flex-col h-40 sm:h-48 md:h-auto shadow-lg">
-                <h3 class="text-xs font-bold text-slate-400 mb-2">💬 갤러리 대기실 채팅</h3>
-                <div id="chat-messages" class="flex-1 overflow-y-auto text-xs space-y-2 pr-1 mb-2 max-h-32 sm:max-h-40 flex flex-col">
-                    <p class="text-slate-500 text-[11px] text-center">입장 완료! 심리전을 시작하세요.</p>
-                </div>
-                <div class="flex gap-1.5">
-                    <input type="text" id="chat-input" placeholder="메시지 입력..." onkeypress="handleChatKeyPress(event)"
-                        class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-400">
-                    <button onclick="sendChat()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-xl text-xs font-bold transition">전송</button>
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3 flex flex-col h-40 md:h-auto">
+                <div id="chat-messages" class="flex-1 overflow-y-auto text-xs space-y-1 mb-2"></div>
+                <div class="flex gap-1">
+                    <input type="text" id="chat-input" placeholder="채팅 입력..." onkeypress="if(event.key==='Enter')sendChat()" class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 text-xs">
+                    <button onclick="sendChat()" class="bg-slate-700 px-3 py-1.5 rounded-xl text-xs">전송</button>
                 </div>
             </div>
         </div>
-
     </div>
 
-    <!-- 3. 게임 종료 모달 -->
-    <div id="game-over-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-4">
-            <h2 class="text-2xl sm:text-3xl font-black text-amber-400">🏆 갤러리 경매 종료!</h2>
-            <div id="final-scoreboard" class="bg-slate-900/80 rounded-2xl p-4 text-left space-y-2"></div>
-            <button onclick="clearSessionAndHome()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
-                로비로 돌아가기 🔄
-            </button>
+    <div id="game-over-modal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+        <div class="bg-slate-800 border border-slate-700 rounded-3xl p-6 max-w-md w-full text-center space-y-3">
+            <h2 class="text-2xl font-black text-amber-400">게임 종료!</h2>
+            <div id="final-scoreboard" class="text-left space-y-1"></div>
+            <button onclick="location.href='/'" class="w-full bg-indigo-600 py-3 rounded-xl font-bold">로비로</button>
         </div>
     </div>
 
     <script>
         const socket = io();
-        let mySocketId = '';
-        let globalRoadmap = [];
         let currentRoomId = '';
-        let myName = '';
+        let globalRoadmap = [];
 
         socket.on('connect', () => {
-            mySocketId = socket.id;
-
-            // 모바일에서 화면이 끊겼다가 재연결되었을 때, 로컬스토리지에 방 정보가 있다면 자동 재입장 시도
-            const savedRoom = localStorage.getItem('bm_room');
-            const savedName = localStorage.getItem('bm_name');
-            if (savedRoom && savedName && !currentRoomId) {
-                socket.emit('reconnect_room', { roomId: savedRoom, name: savedName });
-            }
+            const r = localStorage.getItem('bm_room');
+            const n = localStorage.getItem('bm_name');
+            if (r && n && !currentRoomId) socket.emit('reconnect_room', {roomId: r, name: n});
+            
+            const url = new URLSearchParams(location.search).get('room');
+            if (url) document.getElementById('room-code-input').value = url;
         });
-
-        window.onload = () => {
-            const urlParams = new URLSearchParams(window.location.search);
-            const roomParam = urlParams.get('room');
-            if (roomParam) {
-                document.getElementById('room-code-input').value = roomParam;
-            }
-        };
-
-        function createRoom() {
-            myName = document.getElementById('nickname-input').value.trim();
-            if (!myName) {
-                alert('닉네임을 입력해주세요!');
-                return;
-            }
-            socket.emit('create_room', { name: myName });
-        }
-
-        function joinRoom() {
-            myName = document.getElementById('nickname-input').value.trim();
-            const roomId = document.getElementById('room-code-input').value.trim();
-            if (!myName) {
-                alert('닉네임을 입력해주세요!');
-                return;
-            }
-            if (!roomId) {
-                alert('방 코드를 입력해주세요!');
-                return;
-            }
-            socket.emit('join_room', { name: myName, roomId: roomId });
-        }
-
-        function leaveRoom() {
-            if (confirm('정말 방을 나가시겠습니까?')) {
-                localStorage.removeItem('bm_room');
-                localStorage.removeItem('bm_name');
-                socket.emit('leave_room');
-            }
-        }
-
-        function clearSessionAndHome() {
-            localStorage.removeItem('bm_room');
-            localStorage.removeItem('bm_name');
-            location.href = '/';
-        }
-
-        function destroyRoom() {
-            if (confirm('방을 폭파하고 초기화하시겠습니까? 모든 플레이어가 로비로 튕깁니다.')) {
-                socket.emit('reset_or_destroy_room');
-            }
-        }
 
         socket.on('joined_room', (data) => {
             currentRoomId = data.roomId;
-            myName = data.name || myName;
-            
-            // 세션 정보 저장 (모바일 백그라운드 전환 대비)
             localStorage.setItem('bm_room', currentRoomId);
-            localStorage.setItem('bm_name', myName);
-
+            localStorage.setItem('bm_name', data.name);
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
-            document.getElementById('room-code-badge').innerText = `방 코드: ${currentRoomId}`;
-        });
-
-        socket.on('left_room', () => {
-            localStorage.removeItem('bm_room');
-            localStorage.removeItem('bm_name');
-            location.href = '/';
-        });
-
-        socket.on('room_destroyed', (msg) => {
-            alert(msg);
-            localStorage.removeItem('bm_room');
-            localStorage.removeItem('bm_name');
-            location.href = '/';
-        });
-
-        function copyInviteLink() {
-            const inviteUrl = `${window.location.origin}/?room=${currentRoomId}`;
-            navigator.clipboard.writeText(inviteUrl).then(() => {
-                alert('초대 링크가 복사되었습니다! 친구들에게 공유하세요.');
-            });
-        }
-
-        function toggleReady() {
-            socket.emit('toggle_ready');
-        }
-
-        function startGame() {
-            socket.emit('start_game');
-        }
-
-        function submitBid() {
-            const val = parseInt(document.getElementById('bid-input').value);
-            if (isNaN(val)) return;
-            socket.emit('submit_bid', val);
-            document.getElementById('bid-btn').disabled = true;
-            document.getElementById('bid-btn').classList.add('opacity-50', 'cursor-not-allowed');
-            document.getElementById('bid-status-text').innerText = '제출 완료! 대기중... 🔒';
-        }
-
-        function handleChatKeyPress(e) {
-            if (e.key === 'Enter') {
-                sendChat();
-            }
-        }
-
-        function sendChat() {
-            const input = document.getElementById('chat-input');
-            const msg = input.value.trim();
-            if (!msg) return;
-            socket.emit('send_chat', msg);
-            input.value = '';
-        }
-
-        socket.on('error_msg', (msg) => {
-            alert(msg);
+            document.getElementById('room-code-badge').innerText = currentRoomId;
         });
 
         socket.on('game_started', (data) => {
@@ -276,96 +114,56 @@
             document.getElementById('waiting-control-panel').classList.add('hidden');
             document.getElementById('auction-display-panel').classList.remove('hidden');
             document.getElementById('roadmap-wrapper').classList.remove('hidden');
-            document.getElementById('timer-badge').classList.remove('hidden');
-            document.getElementById('round-title').innerText = '라운드 1 / 10';
-
-            const inputEl = document.getElementById('bid-input');
-            const btnEl = document.getElementById('bid-btn');
-            inputEl.disabled = false;
-            inputEl.classList.remove('opacity-50');
-            btnEl.disabled = false;
-            btnEl.classList.remove('opacity-50', 'cursor-not-allowed');
-            document.getElementById('bid-status-text').innerText = '입찰 대기중...';
-            document.getElementById('bid-status-text').className = 'text-xs text-indigo-400 font-bold';
-        });
-
-        socket.on('timer_update', (timeLeft) => {
-            const min = String(Math.floor(timeLeft / 60)).padStart(2, '0');
-            const sec = String(timeLeft % 60).padStart(2, '0');
-            document.getElementById('timer-badge').innerText = `⏱️ ${min}:${sec}`;
+            
+            const input = document.getElementById('bid-input');
+            const btn = document.getElementById('bid-btn');
+            input.disabled = false; input.classList.remove('opacity-50');
+            btn.disabled = false; btn.classList.remove('opacity-50');
+            document.getElementById('bid-status-text').innerText = '입찰 가능';
         });
 
         socket.on('update_game_state', (state) => {
             const isHost = socket.id === state.hostId;
-            const myPlayer = state.players[socket.id];
+            const me = state.players[socket.id];
 
-            const statusBar = document.getElementById('players-status-bar');
-            statusBar.innerHTML = Object.values(state.players).map(p => {
-                let badge = '';
-                if (p.id === state.hostId) {
-                    badge = '<span class="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-bold">방장</span>';
-                } else {
-                    badge = p.isReady ? '<span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-bold">준비완료 ✅</span>' : '<span class="text-[9px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-bold">대기중 ⏳</span>';
-                }
-
-                return `
-                    <div class="bg-slate-900/80 border border-slate-700/60 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 flex-shrink-0 text-xs">
-                        <span>${p.avatar}</span>
-                        <span class="font-bold ${p.color}">${p.name}</span>
-                        <span class="text-emerald-400 font-semibold">${p.money}P</span>
-                        <span class="text-amber-300 font-semibold">${p.score}점</span>
-                        ${state.roomStatus === 'waiting' ? badge : (p.bid !== null && p.bid !== undefined ? '🔒' : '⏳')}
-                    </div>
-                `;
-            }).join('');
+            document.getElementById('players-status-bar').innerHTML = Object.values(state.players).map(p => `
+                <div class="bg-slate-900 border border-slate-700 px-2 py-1 rounded-lg text-xs flex gap-1 items-center shrink-0">
+                    <span>${p.avatar}</span>
+                    <span class="${p.color} font-bold">${p.name}</span>
+                    <span class="text-emerald-400">${p.money}P</span>
+                    <span class="text-amber-300">${p.score}점</span>
+                    ${state.roomStatus === 'waiting' ? (p.id === state.hostId ? '방장' : (p.isReady ? '✅' : '⏳')) : (typeof p.bid === 'number' ? '🔒' : '⏳')}
+                </div>
+            `).join('');
 
             if (state.roomStatus === 'waiting') {
-                const actionContainer = document.getElementById('action-buttons-container');
+                const ac = document.getElementById('action-buttons-container');
                 if (isHost) {
-                    document.getElementById('room-master-notice').innerText = '방장입니다. 모든 인원이 준비하면 시작하세요!';
-                    actionContainer.innerHTML = `
-                        <button onclick="startGame()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition shadow-lg text-sm">
-                            게임 시작하기 🚀
-                        </button>
-                        <button onclick="destroyRoom()" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-3 rounded-xl transition shadow-lg text-sm">
-                            방 폭파 💣
-                        </button>
-                    `;
+                    ac.innerHTML = `<button onclick="socket.emit('start_game')" class="w-full bg-indigo-600 py-2.5 rounded-xl font-bold">게임 시작</button>`;
                 } else {
-                    document.getElementById('room-master-notice').innerText = '방장이 시작하기 전 [게임 준비]를 눌러주세요!';
-                    const readyText = myPlayer && myPlayer.isReady ? '준비 취소 ❌' : '게임 준비 ✅';
-                    const readyClass = myPlayer && myPlayer.isReady ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500';
-                    actionContainer.innerHTML = `
-                        <button onclick="toggleReady()" class="w-full ${readyClass} text-white font-bold py-3 rounded-xl transition shadow-lg text-sm">
-                            ${readyText}
-                        </button>
-                    `;
+                    const ready = me && me.isReady;
+                    ac.innerHTML = `<button onclick="socket.emit('toggle_ready')" class="w-full ${ready ? 'bg-rose-600' : 'bg-emerald-600'} py-2.5 rounded-xl font-bold">${ready ? '준비 취소' : '준비 완료'}</button>`;
                 }
             }
 
-            if (myPlayer) {
-                document.getElementById('my-money').innerText = myPlayer.money + ' P';
-                document.getElementById('my-score').innerText = myPlayer.score + ' 점';
-                const inputEl = document.getElementById('bid-input');
-                if (parseInt(inputEl.value) > myPlayer.money) {
-                    inputEl.value = myPlayer.money;
-                }
-                inputEl.max = myPlayer.money;
+            if (me) {
+                document.getElementById('my-money').innerText = me.money + 'P';
+                document.getElementById('my-score').innerText = me.score + '점';
             }
 
             if (state.roomStatus === 'bidding' || state.roomStatus === 'revealing') {
                 const item = globalRoadmap[state.currentRound];
                 if (item) {
-                    document.getElementById('round-title').innerText = `라운드 ${state.currentRound + 1} / 10`;
                     document.getElementById('item-category').innerText = item.category;
                     document.getElementById('item-name').innerText = item.name;
                     document.getElementById('item-desc').innerText = item.desc;
                 }
-                renderRoadmap(state.currentRound);
             }
 
             if (state.roomStatus === 'ended') {
-                showGameOver(state.players);
+                document.getElementById('game-over-modal').classList.remove('hidden');
+                let players = Object.values(state.players).sort((a,b)=>b.score-a.score);
+                document.getElementById('final-scoreboard').innerHTML = players.map((p,i)=>`<div class="flex justify-between py-1 border-b border-slate-700"><span>${i+1}위: ${p.name}</span><span>${p.score}점 (${p.money}P)</span></div>`).join('');
             }
         });
 
@@ -373,77 +171,34 @@
             const box = document.getElementById('announcement-box');
             box.innerText = data.resultMsg;
             box.classList.remove('hidden');
-
             const btn = document.getElementById('bid-btn');
-            btn.disabled = false;
-            btn.classList.remove('opacity-50', 'cursor-not-allowed');
-            document.getElementById('bid-status-text').innerText = '입찰 대기중...';
-
-            setTimeout(() => {
-                box.classList.add('hidden');
-            }, 4000);
+            btn.disabled = false; btn.classList.remove('opacity-50');
+            document.getElementById('bid-status-text').innerText = '입찰 가능';
+            setTimeout(() => box.classList.add('hidden'), 3500);
         });
 
         socket.on('receive_chat', (data) => {
-            const chatBox = document.getElementById('chat-messages');
-            const isMe = data.id === mySocketId;
-
-            let chatHTML = '';
-            if (isMe) {
-                chatHTML = `
-                    <div class="flex flex-col items-end self-end max-w-[85%]">
-                        <span class="text-[10px] text-slate-400 mb-0.5">나</span>
-                        <div class="bg-indigo-600 text-white px-3 py-1.5 rounded-2xl rounded-tr-none text-xs shadow">
-                            ${data.message}
-                        </div>
-                    </div>
-                `;
-            } else {
-                chatHTML = `
-                    <div class="flex flex-col items-start self-start max-w-[85%]">
-                        <span class="text-[10px] ${data.color} font-bold mb-0.5">${data.avatar} ${data.name}</span>
-                        <div class="bg-slate-700 text-slate-100 px-3 py-1.5 rounded-2xl rounded-tl-none text-xs shadow">
-                            ${data.message}
-                        </div>
-                    </div>
-                `;
-            }
-
-            chatBox.innerHTML += chatHTML;
-            chatBox.scrollTop = chatBox.scrollHeight;
+            const box = document.getElementById('chat-messages');
+            box.innerHTML += `<div class="text-[11px]"><span class="${data.color} font-bold">${data.name}:</span> ${data.message}</div>`;
+            box.scrollTop = box.scrollHeight;
         });
 
-        function renderRoadmap(currentIdx) {
-            const bar = document.getElementById('roadmap-bar');
-            bar.innerHTML = globalRoadmap.map((item, idx) => {
-                let bg = 'bg-slate-900 border-slate-700 text-slate-400';
-                if (idx < currentIdx) bg = 'bg-slate-800 border-slate-600 text-slate-500 line-through';
-                if (idx === currentIdx) bg = 'bg-indigo-600/30 border-indigo-500 text-white ring-2 ring-indigo-500';
+        socket.on('error_msg', alert);
 
-                return `
-                    <div class="flex-shrink-0 w-12 h-10 sm:w-14 sm:h-12 rounded-lg border flex flex-col items-center justify-center text-[9px] sm:text-[10px] font-bold ${bg}">
-                        <span>R.${item.round}</span>
-                        <span class="text-[7px] sm:text-[8px] opacity-80">${item.type === 'highlight' ? '🔥최종' : item.type.toUpperCase()}</span>
-                    </div>
-                `;
-            }).join('');
+        function submitBid() {
+            const val = parseInt(document.getElementById('bid-input').value);
+            if (isNaN(val)) return;
+            socket.emit('submit_bid', val);
+            const btn = document.getElementById('bid-btn');
+            btn.disabled = true; btn.classList.add('opacity-50');
+            document.getElementById('bid-status-text').innerText = '제출 완료 🔒';
         }
 
-        function showGameOver(playersObj) {
-            const modal = document.getElementById('game-over-modal');
-            const scoreboard = document.getElementById('final-scoreboard');
-            
-            let players = Object.values(playersObj);
-            players.sort((a, b) => b.score - a.score);
-
-            scoreboard.innerHTML = players.map((p, idx) => `
-                <div class="flex justify-between items-center py-2 border-b border-slate-700/60 last:border-0 text-sm">
-                    <span class="font-bold ${p.color}">${idx + 1}위: ${p.avatar} ${p.name}</span>
-                    <span class="font-bold text-amber-300">${p.score} 점 (잔액: ${p.money}P)</span>
-                </div>
-            `).join('');
-
-            modal.classList.remove('hidden');
+        function sendChat() {
+            const input = document.getElementById('chat-input');
+            if (!input.value.trim()) return;
+            socket.emit('send_chat', input.value);
+            input.value = '';
         }
     </script>
 </body>
