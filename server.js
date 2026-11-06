@@ -31,8 +31,6 @@ function generateRoomCode() {
 }
 
 io.on('connection', (socket) => {
-    console.log(`플레이어 접속: ${socket.id}`);
-
     socket.on('create_room', (data) => {
         const roomId = generateRoomCode();
         rooms[roomId] = {
@@ -63,7 +61,6 @@ io.on('connection', (socket) => {
         joinRoom(socket, roomId, data.name);
     });
 
-    // 재연결 시 방 복구 요청 처리
     socket.on('reconnect_room', (data) => {
         const { roomId, name } = data;
         if (roomId && rooms[roomId]) {
@@ -76,7 +73,6 @@ io.on('connection', (socket) => {
     socket.on('toggle_ready', () => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
-
         const room = rooms[roomId];
         const player = room.players[socket.id];
         if (player && socket.id !== room.hostId) {
@@ -88,7 +84,6 @@ io.on('connection', (socket) => {
     socket.on('start_game', () => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
-
         const room = rooms[roomId];
         if (socket.id !== room.hostId) return;
 
@@ -109,10 +104,10 @@ io.on('connection', (socket) => {
         }
     });
 
+    // 입찰 제출 및 즉시 라운드 정산 판정 로직 수정
     socket.on('submit_bid', (bidAmount) => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
-
         const room = rooms[roomId];
         const player = room.players[socket.id];
         if (!player || room.roomStatus !== 'bidding') return;
@@ -123,10 +118,11 @@ io.on('connection', (socket) => {
         player.bid = parsedBid;
         io.to(roomId).emit('update_game_state', room);
 
+        // 방 안의 모든 플레이어가 입찰했는지 엄격하게 확인
         const playersArr = Object.values(room.players);
         const allSubmitted = playersArr.every(p => p.bid !== null && p.bid !== undefined);
 
-        if (allSubmitted) {
+        if (allSubmitted && room.roomStatus === 'bidding') {
             if (room.roundTimer) clearInterval(room.roundTimer);
             resolveRound(room);
         }
@@ -135,7 +131,6 @@ io.on('connection', (socket) => {
     socket.on('send_chat', (msg) => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
-
         const room = rooms[roomId];
         const player = room.players[socket.id];
         if (!player || !msg || !msg.trim()) return;
@@ -157,7 +152,6 @@ io.on('connection', (socket) => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
         const room = rooms[roomId];
-
         if (socket.id !== room.hostId) return;
 
         if (room.roundTimer) clearInterval(room.roundTimer);
@@ -165,10 +159,7 @@ io.on('connection', (socket) => {
         delete rooms[roomId];
     });
 
-    socket.on('disconnect', () => {
-        // 모바일 화면 전환 시 즉시 방에서 튕기지 않도록 잠시 대기 시간 부여 가능하나,
-        // 여기서는 기존 안정성을 위해 유지하되 재접속 시 세션 복구(localStorage)를 활용합니다.
-    });
+    socket.on('disconnect', () => {});
 });
 
 function joinRoom(socket, roomId, name) {
@@ -244,7 +235,9 @@ function startNewRound(room) {
 }
 
 function resolveRound(room) {
+    if (room.roomStatus !== 'bidding') return; // 중복 실행 방지
     room.roomStatus = 'revealing';
+
     const item = ROADMAP[room.currentRound];
     const players = Object.values(room.players);
 
