@@ -53,6 +53,11 @@ io.on('connection', (socket) => {
         handleLogin(socket, roomId, data.name, data.token);
     });
 
+    // 방 나가기 및 방 폭파 처리
+    socket.on('leave_room', (token) => {
+        handleLeaveRoom(socket, token);
+    });
+
     socket.on('toggle_ready', (token) => {
         const room = rooms[socket.roomId];
         if (!room) return;
@@ -105,7 +110,9 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('disconnect', () => {});
+    socket.on('disconnect', () => {
+        // 연결이 완전히 끊긴 경우 처리 (필요시 퇴장 처리와 연동 가능)
+    });
 });
 
 function handleLogin(socket, roomId, name, token) {
@@ -156,6 +163,44 @@ function handleLogin(socket, roomId, name, token) {
 
     socket.emit('joined_room', { roomId, token: playerToken, name: room.players[socket.id].name });
     io.to(roomId).emit('update_game_state', room);
+}
+
+function handleLeaveRoom(socket, token) {
+    const roomId = socket.roomId;
+    if (!roomId || !rooms[roomId]) return;
+
+    const room = rooms[roomId];
+    
+    // 해당 플레이어 제거
+    let targetSocketId = null;
+    for (const [sId, p] of Object.entries(room.players)) {
+        if (p.token === token) {
+            targetSocketId = sId;
+            break;
+        }
+    }
+
+    if (targetSocketId) {
+        delete room.players[targetSocketId];
+    }
+
+    socket.leave(roomId);
+    socket.roomId = null;
+    socket.emit('left_room');
+
+    // 방에 남은 사람이 없으면 방 폭파 (메모리 정리)
+    if (Object.keys(room.players).length === 0) {
+        if (room.roundTimer) clearInterval(room.roundTimer);
+        delete rooms[roomId];
+    } else {
+        // 방장이 나간 경우 다음 사람에게 권한 승계
+        if (room.hostToken === token) {
+            const nextPlayer = Object.values(room.players)[0];
+            room.hostToken = nextPlayer.token;
+            nextPlayer.isReady = true;
+        }
+        io.to(roomId).emit('update_game_state', room);
+    }
 }
 
 function startNewRound(room) {
