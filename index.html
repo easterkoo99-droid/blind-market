@@ -28,6 +28,7 @@
                     <h1 class="font-black text-amber-400">블라인드 마켓</h1>
                     <span id="room-code-badge" class="bg-slate-900 text-amber-300 text-[10px] px-2 py-0.5 rounded font-mono"></span>
                     <button onclick="navigator.clipboard.writeText(location.origin + '/?room=' + currentRoomId); alert('링크 복사 완료!');" class="bg-indigo-600 text-[10px] px-2 py-1 rounded">초대링크</button>
+                    <button onclick="leaveRoom()" class="bg-rose-600 text-[10px] px-2 py-1 rounded font-bold">방 나가기</button>
                 </div>
                 <div class="flex gap-2 text-xs">
                     <div>자금: <span id="my-money" class="text-emerald-400 font-bold">50P</span></div>
@@ -126,6 +127,17 @@
             localStorage.setItem('bm_room', roomId);
             socket.emit('join_room', { name, roomId, token: getMyToken() });
         }
+
+        function leaveRoom() {
+            if (confirm('정말 방을 나가시겠습니까?')) {
+                socket.emit('leave_room', getMyToken());
+            }
+        }
+
+        socket.on('left_room', () => {
+            localStorage.removeItem('bm_room');
+            location.href = '/';
+        });
 
         function clearSession() {
             localStorage.removeItem('bm_room');
