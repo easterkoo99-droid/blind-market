@@ -282,7 +282,7 @@
                         <span class="font-bold ${p.color}">${p.name}</span>
                         <span class="text-emerald-400 font-semibold">${p.money}P</span>
                         <span class="text-amber-300 font-semibold">${p.score}점</span>
-                        ${state.roomStatus === 'waiting' ? badge : (p.bid !== null ? '🔒' : '⏳')}
+                        ${state.roomStatus === 'waiting' ? badge : (p.bid !== null && p.bid !== undefined ? '🔒' : '⏳')}
                     </div>
                 `;
             }).join('');
