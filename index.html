@@ -9,30 +9,45 @@
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 font-sans">
 
-    <!-- 1. 닉네임 입력 모달 (접속 시 바로 표시) -->
+    <!-- 1. 로비 / 방 생성 및 참가 화면 -->
     <div id="login-screen" class="fixed inset-0 bg-slate-950 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-6">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-5">
             <div>
                 <h1 class="text-3xl font-black text-amber-400 mb-1">🎨 블라인드 마켓</h1>
                 <p class="text-xs text-slate-400">아트 갤러리 밀봉 경매 & 심리전</p>
             </div>
-            <input type="text" id="nickname-input" placeholder="갤러리 딜러 닉네임 입력" maxlength="10"
-                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-white font-bold focus:outline-none focus:border-amber-400">
-            <button onclick="joinGame()" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3.5 rounded-xl transition shadow-lg shadow-amber-500/20">
-                입장하기 🚪
-            </button>
+            
+            <div class="space-y-3 pt-2">
+                <input type="text" id="nickname-input" placeholder="내 닉네임 입력" maxlength="10"
+                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-white font-bold focus:outline-none focus:border-amber-400">
+                <input type="text" id="room-code-input" placeholder="방 코드 (초대 링크면 자동 입력)" maxlength="6"
+                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-amber-300 font-mono font-bold uppercase focus:outline-none focus:border-amber-400">
+            </div>
+
+            <div class="flex gap-2 pt-2">
+                <button onclick="createRoom()" class="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black py-3 rounded-xl transition shadow-lg shadow-amber-500/20 text-sm">
+                    방 만들기 🏠
+                </button>
+                <button onclick="joinRoom()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-black py-3 rounded-xl transition shadow-lg text-sm">
+                    참가하기 🚪
+                </button>
+            </div>
         </div>
     </div>
 
-    <!-- 2. 통합 게임방 화면 (대기 중에는 레디/시작 버튼, 게임 시작 시 경매판으로 전환) -->
-    <div id="game-screen" class="w-full max-w-3xl flex-1 flex flex-col gap-3 my-2">
+    <!-- 2. 통합 게임방 화면 -->
+    <div id="game-screen" class="w-full max-w-3xl flex-1 flex flex-col gap-3 my-2 hidden">
         
         <header class="bg-slate-800/95 backdrop-blur border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
             <div class="flex justify-between items-center">
                 <div>
-                    <h1 class="text-lg font-black text-amber-400 tracking-wider">🎨 블라인드 마켓</h1>
                     <div class="flex items-center gap-2">
-                        <p id="round-title" class="text-xs text-slate-400">게임 대기 중...</p>
+                        <h1 class="text-lg font-black text-amber-400 tracking-wider">🎨 블라인드 마켓</h1>
+                        <span id="room-code-badge" class="bg-slate-900 border border-slate-700 text-amber-300 text-[10px] px-2 py-0.5 rounded-md font-mono font-bold">방 코드: ------</span>
+                        <button onclick="copyInviteLink()" class="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-0.5 rounded-md font-bold transition">초대링크 복사 🔗</button>
+                    </div>
+                    <div class="flex items-center gap-2 mt-1">
+                        <p id="round-title" class="text-xs text-slate-400">참가자 준비 대기 중...</p>
                         <span id="timer-badge" class="hidden bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">⏱️ 05:00</span>
                     </div>
                 </div>
@@ -47,26 +62,19 @@
                     </div>
                 </div>
             </div>
-            <!-- 실시간 참여자 현황판 (레디 상태 표시) -->
             <div id="players-status-bar" class="flex gap-2 overflow-x-auto pt-1 border-t border-slate-700/60"></div>
         </header>
 
-        <!-- 로드맵 바 (게임 시작 전에는 숨김) -->
         <div id="roadmap-wrapper" class="bg-slate-800/50 border border-slate-700/80 rounded-xl p-2.5 hidden">
             <div id="roadmap-bar" class="flex gap-1.5 overflow-x-auto pb-1"></div>
         </div>
 
-        <!-- 중앙 전시관 (대기 중에는 레디/시작 컨트롤러 표시) -->
         <div id="center-display-area" class="bg-gradient-to-b from-slate-800 to-slate-850 border-2 border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center relative shadow-xl min-h-[180px]">
-            <!-- 대기 상태 패널 -->
             <div id="waiting-control-panel" class="flex flex-col items-center gap-4 w-full">
-                <h2 id="room-master-notice" class="text-base font-bold text-amber-300">참가자들을 기다리는 중입니다...</h2>
-                <div id="action-buttons-container" class="flex gap-3 w-full max-w-xs">
-                    <!-- JS로 방장 여부에 따라 버튼 동적 생성 -->
-                </div>
+                <h2 id="room-master-notice" class="text-base font-bold text-amber-300">모든 플레이어가 준비하면 시작할 수 있습니다!</h2>
+                <div id="action-buttons-container" class="flex gap-3 w-full max-w-xs"></div>
             </div>
 
-            <!-- 경매 진행 상태 패널 (게임 시작 시 표시) -->
             <div id="auction-display-panel" class="hidden flex flex-col items-center w-full">
                 <span id="item-category" class="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">공개 미술품</span>
                 <div class="my-2">
@@ -77,10 +85,7 @@
             </div>
         </div>
 
-        <!-- 하단 영역 (입찰 컨트롤 + 채팅창) -->
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
-            
-            <!-- 입찰 패널 (대기 중에는 비활성화/안내 문구) -->
             <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex flex-col justify-between shadow-lg">
                 <div>
                     <div class="flex justify-between items-center mb-2">
@@ -101,7 +106,6 @@
                 </div>
             </div>
 
-            <!-- 카카오톡 스타일 채팅창 -->
             <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex flex-col h-48 md:h-auto shadow-lg">
                 <h3 class="text-xs font-bold text-slate-400 mb-2">💬 갤러리 대기실 채팅</h3>
                 <div id="chat-messages" class="flex-1 overflow-y-auto text-xs space-y-2.5 pr-1 mb-2 max-h-36 flex flex-col">
@@ -113,7 +117,6 @@
                     <button onclick="sendChat()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-xl text-xs font-bold transition">전송</button>
                 </div>
             </div>
-
         </div>
 
     </div>
@@ -123,7 +126,7 @@
         <div class="bg-slate-800 border border-slate-700 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl space-y-4">
             <h2 class="text-3xl font-black text-amber-400">🏆 갤러리 경매 종료!</h2>
             <div id="final-scoreboard" class="bg-slate-900/80 rounded-2xl p-4 text-left space-y-2"></div>
-            <button onclick="location.reload()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
+            <button onclick="location.href='/'" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
                 로비로 돌아가기 🔄
             </button>
         </div>
@@ -133,20 +136,55 @@
         const socket = io();
         let mySocketId = '';
         let globalRoadmap = [];
+        let currentRoomId = '';
 
         socket.on('connect', () => {
             mySocketId = socket.id;
         });
 
-        function joinGame() {
-            const input = document.getElementById('nickname-input');
-            const myName = input.value.trim();
-            if (!myName) {
+        window.onload = () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const roomParam = urlParams.get('room');
+            if (roomParam) {
+                document.getElementById('room-code-input').value = roomParam;
+            }
+        };
+
+        function createRoom() {
+            const name = document.getElementById('nickname-input').value.trim();
+            if (!name) {
                 alert('닉네임을 입력해주세요!');
                 return;
             }
-            socket.emit('join_game', { name: myName });
+            socket.emit('create_room', { name: name });
+        }
+
+        function joinRoom() {
+            const name = document.getElementById('nickname-input').value.trim();
+            const roomId = document.getElementById('room-code-input').value.trim();
+            if (!name) {
+                alert('닉네임을 입력해주세요!');
+                return;
+            }
+            if (!roomId) {
+                alert('방 코드를 입력해주세요!');
+                return;
+            }
+            socket.emit('join_room', { name: name, roomId: roomId });
+        }
+
+        socket.on('joined_room', (data) => {
+            currentRoomId = data.roomId;
             document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('room-code-badge').innerText = `방 코드: ${currentRoomId}`;
+        });
+
+        function copyInviteLink() {
+            const inviteUrl = `${window.location.origin}/?room=${currentRoomId}`;
+            navigator.clipboard.writeText(inviteUrl).then(() => {
+                alert('초대 링크가 복사되었습니다! 친구들에게 공유하세요.');
+            });
         }
 
         function toggleReady() {
@@ -180,14 +218,12 @@
 
         socket.on('game_started', (data) => {
             globalRoadmap = data.roadmap;
-            // 대기 패널 숨기고 경매 패널 및 타이머 표시
             document.getElementById('waiting-control-panel').classList.add('hidden');
             document.getElementById('auction-display-panel').classList.remove('hidden');
             document.getElementById('roadmap-wrapper').classList.remove('hidden');
             document.getElementById('timer-badge').classList.remove('hidden');
             document.getElementById('round-title').innerText = '라운드 1 / 10';
 
-            // 입찰 컨트롤 활성화
             const inputEl = document.getElementById('bid-input');
             const btnEl = document.getElementById('bid-btn');
             inputEl.disabled = false;
@@ -208,14 +244,13 @@
             const isHost = socket.id === state.hostId;
             const myPlayer = state.players[socket.id];
 
-            // 상단 플레이어 현황판 갱신
             const statusBar = document.getElementById('players-status-bar');
             statusBar.innerHTML = Object.values(state.players).map(p => {
                 let badge = '';
                 if (p.id === state.hostId) {
                     badge = '<span class="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-bold">방장</span>';
                 } else {
-                    badge = p.isReady ? '<span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-bold">준비완료</span>' : '<span class="text-[9px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-bold">대기중</span>';
+                    badge = p.isReady ? '<span class="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-bold">준비완료 ✅</span>' : '<span class="text-[9px] bg-slate-700 text-slate-400 px-1.5 py-0.5 rounded font-bold">대기중 ⏳</span>';
                 }
 
                 return `
@@ -229,19 +264,18 @@
                 `;
             }).join('');
 
-            // 대기실 제어 버튼 동적 렌더링 (게임 전 상태일 때만)
             if (state.roomStatus === 'waiting') {
                 const actionContainer = document.getElementById('action-buttons-container');
                 if (isHost) {
-                    document.getElementById('room-master-notice').innerText = '당신은 방장입니다. 인원이 모이면 시작하세요!';
+                    document.getElementById('room-master-notice').innerText = '방장입니다. 모든 인원이 준비하면 시작하세요!';
                     actionContainer.innerHTML = `
                         <button onclick="startGame()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition shadow-lg">
                             게임 시작하기 🚀
                         </button>
                     `;
                 } else {
-                    document.getElementById('room-master-notice').innerText = '방장이 게임을 시작하길 기다리거나 준비를 누르세요!';
-                    const readyText = myPlayer && myPlayer.isReady ? '준비 취소 ❌' : '준비하기 ✅';
+                    document.getElementById('room-master-notice').innerText = '방장이 시작하기 전 [게임 준비]를 눌러주세요!';
+                    const readyText = myPlayer && myPlayer.isReady ? '준비 취소 ❌' : '게임 준비 ✅';
                     const readyClass = myPlayer && myPlayer.isReady ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500';
                     actionContainer.innerHTML = `
                         <button onclick="toggleReady()" class="w-full ${readyClass} text-white font-bold py-3 rounded-xl transition shadow-lg">
