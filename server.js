@@ -24,96 +24,118 @@ const ROADMAP = [
 const AVATARS = ['🎨', '🎭', '🗿', '🖼️', '🖌️', '💎'];
 const COLORS = ['text-amber-400', 'text-indigo-400', 'text-pink-400', 'text-emerald-400', 'text-cyan-400', 'text-purple-400'];
 
-let gameState = {
-    roomStatus: 'waiting', // waiting, bidding, revealing, ended
-    currentRound: 0,
-    players: {}, 
-    bidsSubmittedCount: 0,
-    hostId: null // 방장 소켓 ID
-};
+let rooms = {};
 
-let roundTimer = null;
-const ROUND_TIME_LIMIT = 300; // 5분 (300초)
+function generateRoomCode() {
+    return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
 
 io.on('connection', (socket) => {
     console.log(`플레이어 접속: ${socket.id}`);
 
-    // 첫 번째로 들어온 사람이 자동으로 방장이 됨
-    if (!gameState.hostId && gameState.roomStatus === 'waiting') {
-        gameState.hostId = socket.id;
-    }
+    socket.on('create_room', (data) => {
+        const roomId = generateRoomCode();
+        rooms[roomId] = {
+            roomId: roomId,
+            roomStatus: 'waiting',
+            currentRound: 0,
+            players: {},
+            bidsSubmittedCount: 0,
+            hostId: socket.id,
+            roundTimer: null
+        };
+        joinRoom(socket, roomId, data.name);
+    });
 
-    socket.on('join_game', (data) => {
-        const playerKeys = Object.keys(gameState.players);
-        if (playerKeys.length >= 6) {
+    socket.on('join_room', (data) => {
+        const roomId = data.roomId ? data.roomId.trim().toUpperCase() : '';
+        if (!rooms[roomId]) {
+            socket.emit('error_msg', '존재하지 않거나 만료된 방 코드입니다!');
+            return;
+        }
+        if (rooms[roomId].roomStatus !== 'waiting') {
+            socket.emit('error_msg', '이미 게임이 진행 중인 방입니다!');
+            return;
+        }
+        if (Object.keys(rooms[roomId].players).length >= 6) {
             socket.emit('error_msg', '방이 꽉 찼습니다! (최대 6명)');
             return;
         }
-
-        const playerIndex = playerKeys.length;
-        gameState.players[socket.id] = {
-            id: socket.id,
-            name: data.name || `딜러${playerIndex + 1}`,
-            avatar: AVATARS[playerIndex % AVATARS.length],
-            color: COLORS[playerIndex % COLORS.length],
-            money: 50,
-            score: 0,
-            bid: null,
-            isReady: socket.id === gameState.hostId // 방장은 자동 준비
-        };
-
-        io.emit('update_game_state', gameState);
+        joinRoom(socket, roomId, data.name);
     });
 
-    // 준비 토글 (레디 버튼)
+    // 준비 상태 토글
     socket.on('toggle_ready', () => {
-        const player = gameState.players[socket.id];
-        if (player && socket.id !== gameState.hostId) {
+        const roomId = socket.roomId;
+        if (!roomId || !rooms[roomId]) return;
+
+        const room = rooms[roomId];
+        const player = room.players[socket.id];
+        if (player && socket.id !== room.hostId) {
             player.isReady = !player.isReady;
-            io.emit('update_game_state', gameState);
+            io.to(roomId).emit('update_game_state', room);
         }
     });
 
-    // 방장 전용 시작 버튼
+    // 방장 게임 시작 (모든 참여자가 준비 완료 상태여야 함)
     socket.on('start_game', () => {
-        if (socket.id !== gameState.hostId) return;
+        const roomId = socket.roomId;
+        if (!roomId || !rooms[roomId]) return;
 
-        const playerKeys = Object.keys(gameState.players);
-        if (playerKeys.length < 2) {
+        const room = rooms[roomId];
+        if (socket.id !== room.hostId) return;
+
+        const players = Object.values(room.players);
+        if (players.length < 2) {
             socket.emit('error_msg', '최소 2명 이상의 플레이어가 필요합니다!');
             return;
         }
 
-        if (gameState.roomStatus === 'waiting') {
-            startNewRound();
+        // 방장을 제외한 모든 참여자가 레디를 완료했는지 검사
+        const unreadyPlayers = players.filter(p => p.id !== room.hostId && !p.isReady);
+        if (unreadyPlayers.length > 0) {
+            socket.emit('error_msg', '모든 플레이어가 [게임 준비]를 완료해야 시작할 수 있습니다!');
+            return;
+        }
+
+        if (room.roomStatus === 'waiting') {
+            startNewRound(room);
         }
     });
 
     socket.on('submit_bid', (bidAmount) => {
-        const player = gameState.players[socket.id];
-        if (!player || gameState.roomStatus !== 'bidding') return;
+        const roomId = socket.roomId;
+        if (!roomId || !rooms[roomId]) return;
+
+        const room = rooms[roomId];
+        const player = room.players[socket.id];
+        if (!player || room.roomStatus !== 'bidding') return;
         
         if (isNaN(bidAmount) || bidAmount < 0 || bidAmount > player.money) return;
 
         if (player.bid === null) {
-            gameState.bidsSubmittedCount++;
+            room.bidsSubmittedCount++;
         }
 
         player.bid = bidAmount;
-        io.emit('update_game_state', gameState);
+        io.to(roomId).emit('update_game_state', room);
 
-        const activePlayers = Object.values(gameState.players);
-        if (gameState.bidsSubmittedCount >= activePlayers.length) {
-            if (roundTimer) clearInterval(roundTimer);
-            resolveRound();
+        const activePlayers = Object.values(room.players);
+        if (room.bidsSubmittedCount >= activePlayers.length) {
+            if (room.roundTimer) clearInterval(room.roundTimer);
+            resolveRound(room);
         }
     });
 
     socket.on('send_chat', (msg) => {
-        const player = gameState.players[socket.id];
+        const roomId = socket.roomId;
+        if (!roomId || !rooms[roomId]) return;
+
+        const room = rooms[roomId];
+        const player = room.players[socket.id];
         if (!player || !msg.trim()) return;
 
-        io.emit('receive_chat', {
+        io.to(roomId).emit('receive_chat', {
             id: socket.id,
             name: player.name,
             avatar: player.avatar,
@@ -123,60 +145,79 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        if (gameState.players[socket.id]) {
-            const wasHost = socket.id === gameState.hostId;
-            delete gameState.players[socket.id];
-            console.log(`플레이어 퇴장: ${socket.id}`);
+        const roomId = socket.roomId;
+        if (roomId && rooms[roomId]) {
+            const room = rooms[roomId];
+            const wasHost = socket.id === room.hostId;
+            delete room.players[socket.id];
 
-            const remainingKeys = Object.keys(gameState.players);
+            const remainingKeys = Object.keys(room.players);
             if (remainingKeys.length === 0) {
-                gameState.roomStatus = 'waiting';
-                gameState.currentRound = 0;
-                gameState.bidsSubmittedCount = 0;
-                gameState.hostId = null;
-                if (roundTimer) clearInterval(roundTimer);
-            } else if (wasHost) {
-                // 방장이 나가면 남은 사람 중 첫 번째 사람에게 방장 위임
-                gameState.hostId = remainingKeys[0];
-                gameState.players[gameState.hostId].isReady = true;
+                if (room.roundTimer) clearInterval(room.roundTimer);
+                delete rooms[roomId];
+            } else {
+                if (wasHost) {
+                    room.hostId = remainingKeys[0];
+                    room.players[room.hostId].isReady = true;
+                }
+                io.to(roomId).emit('update_game_state', room);
             }
-
-            io.emit('update_game_state', gameState);
         }
     });
 });
 
-function startNewRound() {
-    gameState.roomStatus = 'bidding';
-    gameState.bidsSubmittedCount = 0;
-    Object.values(gameState.players).forEach(p => p.bid = null);
+function joinRoom(socket, roomId, name) {
+    socket.join(roomId);
+    socket.roomId = roomId;
+
+    const room = rooms[roomId];
+    const playerKeys = Object.keys(room.players);
+    const playerIndex = playerKeys.length;
+
+    room.players[socket.id] = {
+        id: socket.id,
+        name: name || `딜러${playerIndex + 1}`,
+        avatar: AVATARS[playerIndex % AVATARS.length],
+        color: COLORS[playerIndex % COLORS.length],
+        money: 50,
+        score: 0,
+        bid: null,
+        isReady: socket.id === room.hostId // 방장은 자동 준비
+    };
+
+    socket.emit('joined_room', { roomId: roomId });
+    io.to(roomId).emit('update_game_state', room);
+}
+
+function startNewRound(room) {
+    room.roomStatus = 'bidding';
+    room.bidsSubmittedCount = 0;
+    Object.values(room.players).forEach(p => p.bid = null);
     
-    io.emit('game_started', { roadmap: ROADMAP, timeLimit: ROUND_TIME_LIMIT });
-    io.emit('update_game_state', gameState);
+    io.to(room.roomId).emit('game_started', { roadmap: ROADMAP, timeLimit: 300 });
+    io.to(room.roomId).emit('update_game_state', room);
 
-    if (roundTimer) clearInterval(roundTimer);
+    if (room.roundTimer) clearInterval(room.roundTimer);
 
-    let timeLeft = ROUND_TIME_LIMIT;
-    roundTimer = setInterval(() => {
+    let timeLeft = 300;
+    room.roundTimer = setInterval(() => {
         timeLeft--;
-        io.emit('timer_update', timeLeft);
+        io.to(room.roomId).emit('timer_update', timeLeft);
 
         if (timeLeft <= 0) {
-            clearInterval(roundTimer);
-            Object.values(gameState.players).forEach(p => {
-                if (p.bid === null) {
-                    p.bid = 0;
-                }
+            clearInterval(room.roundTimer);
+            Object.values(room.players).forEach(p => {
+                if (p.bid === null) p.bid = 0;
             });
-            resolveRound();
+            resolveRound(room);
         }
     }, 1000);
 }
 
-function resolveRound() {
-    gameState.roomStatus = 'revealing';
-    const item = ROADMAP[gameState.currentRound];
-    const players = Object.values(gameState.players);
+function resolveRound(room) {
+    room.roomStatus = 'revealing';
+    const item = ROADMAP[room.currentRound];
+    const players = Object.values(room.players);
 
     players.sort((a, b) => b.bid - a.bid);
     const winner = players[0];
@@ -213,15 +254,15 @@ function resolveRound() {
         resultMsg = `🏛️ ${winner.avatar} ${winner.name}님이 [${item.name}] 낙찰 (${winner.bid}P 지불) -> ${itemTypeStr} (${actualValue > 0 ? '+' + actualValue : actualValue}점)`;
     }
 
-    io.emit('round_result', { resultMsg, gameState });
+    io.to(room.roomId).emit('round_result', { resultMsg, roomState: room });
 
     setTimeout(() => {
-        gameState.currentRound++;
-        if (gameState.currentRound >= ROADMAP.length) {
-            gameState.roomStatus = 'ended';
-            io.emit('update_game_state', gameState);
+        room.currentRound++;
+        if (room.currentRound >= ROADMAP.length) {
+            room.roomStatus = 'ended';
+            io.to(room.roomId).emit('update_game_state', room);
         } else {
-            startNewRound();
+            startNewRound(room);
         }
     }, 4500);
 }
