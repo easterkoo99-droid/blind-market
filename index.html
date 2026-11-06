@@ -162,7 +162,7 @@
 
         socket.on('update_game_state', (state) => {
             const myToken = getMyToken();
-            const isHost = state.hostToken === myToken;
+            const isHost = (state.hostToken === myToken);
             const me = Object.values(state.players).find(p => p.token === myToken);
 
             document.getElementById('players-status-bar').innerHTML = Object.values(state.players).map(p => `
