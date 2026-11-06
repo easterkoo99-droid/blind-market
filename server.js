@@ -40,7 +40,6 @@ io.on('connection', (socket) => {
             roomStatus: 'waiting',
             currentRound: 0,
             players: {},
-            bidsSubmittedCount: 0,
             hostId: socket.id,
             roundTimer: null
         };
@@ -64,7 +63,26 @@ io.on('connection', (socket) => {
         joinRoom(socket, roomId, data.name);
     });
 
-    // 준비 상태 토글
+    // 방 나가기
+    socket.on('leave_room', () => {
+        handlePlayerLeave(socket);
+    });
+
+    // 방 폭파 또는 게임 초기화 (방장 전용)
+    socket.on('reset_or_destroy_room', () => {
+        const roomId = socket.roomId;
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (socket.id !== room.hostId) return;
+
+        if (room.roundTimer) clearInterval(room.roundTimer);
+
+        // 방에 있는 모든 플레이어에게 방이 폭파되었음을 알림
+        io.to(roomId).emit('room_destroyed', '방장에 의해 방이 폭파(초기화)되었습니다.');
+        delete rooms[roomId];
+    });
+
     socket.on('toggle_ready', () => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -77,7 +95,6 @@ io.on('connection', (socket) => {
         }
     });
 
-    // 방장 게임 시작 (모든 참여자가 준비 완료 상태여야 함)
     socket.on('start_game', () => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -91,7 +108,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 방장을 제외한 모든 참여자가 레디를 완료했는지 검사
         const unreadyPlayers = players.filter(p => p.id !== room.hostId && !p.isReady);
         if (unreadyPlayers.length > 0) {
             socket.emit('error_msg', '모든 플레이어가 [게임 준비]를 완료해야 시작할 수 있습니다!');
@@ -113,15 +129,13 @@ io.on('connection', (socket) => {
         
         if (isNaN(bidAmount) || bidAmount < 0 || bidAmount > player.money) return;
 
-        if (player.bid === null) {
-            room.bidsSubmittedCount++;
-        }
-
         player.bid = bidAmount;
         io.to(roomId).emit('update_game_state', room);
 
-        const activePlayers = Object.values(room.players);
-        if (room.bidsSubmittedCount >= activePlayers.length) {
+        const playersArr = Object.values(room.players);
+        const allSubmitted = playersArr.every(p => p.bid !== null);
+
+        if (allSubmitted) {
             if (room.roundTimer) clearInterval(room.roundTimer);
             resolveRound(room);
         }
@@ -145,26 +159,34 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        const roomId = socket.roomId;
-        if (roomId && rooms[roomId]) {
-            const room = rooms[roomId];
-            const wasHost = socket.id === room.hostId;
-            delete room.players[socket.id];
-
-            const remainingKeys = Object.keys(room.players);
-            if (remainingKeys.length === 0) {
-                if (room.roundTimer) clearInterval(room.roundTimer);
-                delete rooms[roomId];
-            } else {
-                if (wasHost) {
-                    room.hostId = remainingKeys[0];
-                    room.players[room.hostId].isReady = true;
-                }
-                io.to(roomId).emit('update_game_state', room);
-            }
-        }
+        handlePlayerLeave(socket);
     });
 });
+
+function handlePlayerLeave(socket) {
+    const roomId = socket.roomId;
+    if (roomId && rooms[roomId]) {
+        const room = rooms[roomId];
+        const wasHost = socket.id === room.hostId;
+        delete room.players[socket.id];
+
+        socket.leave(roomId);
+        socket.roomId = null;
+        socket.emit('left_room');
+
+        const remainingKeys = Object.keys(room.players);
+        if (remainingKeys.length === 0) {
+            if (room.roundTimer) clearInterval(room.roundTimer);
+            delete rooms[roomId];
+        } else {
+            if (wasHost) {
+                room.hostId = remainingKeys[0];
+                room.players[room.hostId].isReady = true;
+            }
+            io.to(roomId).emit('update_game_state', room);
+        }
+    }
+}
 
 function joinRoom(socket, roomId, name) {
     socket.join(roomId);
@@ -182,7 +204,7 @@ function joinRoom(socket, roomId, name) {
         money: 50,
         score: 0,
         bid: null,
-        isReady: socket.id === room.hostId // 방장은 자동 준비
+        isReady: socket.id === room.hostId
     };
 
     socket.emit('joined_room', { roomId: roomId });
@@ -191,7 +213,6 @@ function joinRoom(socket, roomId, name) {
 
 function startNewRound(room) {
     room.roomStatus = 'bidding';
-    room.bidsSubmittedCount = 0;
     Object.values(room.players).forEach(p => p.bid = null);
     
     io.to(room.roomId).emit('game_started', { roadmap: ROADMAP, timeLimit: 300 });
