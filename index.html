@@ -91,27 +91,31 @@
         let currentRoomId = '';
         let globalRoadmap = [];
 
-        // 모바일 백그라운드 복귀 시 세션 자동 복구 로직
+        function getMyToken() {
+            let token = localStorage.getItem('bm_token');
+            if (!token) {
+                token = 'tok_' + Math.random().toString(36).substring(2, 9);
+                localStorage.setItem('bm_token', token);
+            }
+            return token;
+        }
+
         socket.on('connect', () => {
             const savedRoom = localStorage.getItem('bm_room');
             const savedName = localStorage.getItem('bm_name');
             if (savedRoom && savedName) {
-                socket.emit('restore_session', { roomId: savedRoom, name: savedName });
+                socket.emit('join_room', { roomId: savedRoom, name: savedName, token: getMyToken() });
             }
 
             const urlParams = new URLSearchParams(location.search).get('room');
             if (urlParams) document.getElementById('room-code-input').value = urlParams;
         });
 
-        socket.on('force_home', () => {
-            clearSession();
-        });
-
         function createRoom() {
             const name = document.getElementById('nickname-input').value.trim();
             if (!name) { alert('닉네임을 입력하세요'); return; }
             localStorage.setItem('bm_name', name);
-            socket.emit('create_room', { name });
+            socket.emit('create_room', { name, token: getMyToken() });
         }
 
         function joinRoom() {
@@ -119,12 +123,13 @@
             const roomId = document.getElementById('room-code-input').value.trim();
             if (!name || !roomId) { alert('닉네임과 방 코드를 입력하세요'); return; }
             localStorage.setItem('bm_name', name);
-            socket.emit('join_room', { name, roomId });
+            localStorage.setItem('bm_room', roomId);
+            socket.emit('join_room', { name, roomId, token: getMyToken() });
         }
 
         function clearSession() {
             localStorage.removeItem('bm_room');
-            localStorage.removeItem('bm_name');
+            localStorage.removeItem('bm_token');
             location.href = '/';
         }
 
@@ -144,8 +149,9 @@
         });
 
         socket.on('update_game_state', (state) => {
-            const isHost = socket.id === state.hostSocketId;
-            const me = state.players[socket.id];
+            const myToken = getMyToken();
+            const isHost = state.hostToken === myToken;
+            const me = Object.values(state.players).find(p => p.token === myToken);
 
             document.getElementById('players-status-bar').innerHTML = Object.values(state.players).map(p => `
                 <div class="bg-slate-900 border border-slate-700 px-2 py-1 rounded-lg text-xs flex gap-1 items-center shrink-0">
@@ -153,17 +159,17 @@
                     <span class="${p.color} font-bold">${p.name}</span>
                     <span class="text-emerald-400">${p.money}P</span>
                     <span class="text-amber-300">${p.score}점</span>
-                    ${state.roomStatus === 'waiting' ? (p.id === state.hostSocketId ? '방장' : (p.isReady ? '✅' : '⏳')) : (typeof p.bid === 'number' ? '🔒' : '⏳')}
+                    ${state.roomStatus === 'waiting' ? (p.token === state.hostToken ? '방장' : (p.isReady ? '✅' : '⏳')) : (typeof p.bid === 'number' ? '🔒' : '⏳')}
                 </div>
             `).join('');
 
             if (state.roomStatus === 'waiting') {
                 const ac = document.getElementById('action-buttons-container');
                 if (isHost) {
-                    ac.innerHTML = `<button onclick="socket.emit('start_game')" class="w-full bg-indigo-600 py-2.5 rounded-xl font-bold">게임 시작</button>`;
+                    ac.innerHTML = `<button onclick="socket.emit('start_game', '${myToken}')" class="w-full bg-indigo-600 py-2.5 rounded-xl font-bold">게임 시작</button>`;
                 } else {
                     const ready = me && me.isReady;
-                    ac.innerHTML = `<button onclick="socket.emit('toggle_ready')" class="w-full ${ready ? 'bg-rose-600' : 'bg-emerald-600'} py-2.5 rounded-xl font-bold">${ready ? '준비 취소' : '준비 완료'}</button>`;
+                    ac.innerHTML = `<button onclick="socket.emit('toggle_ready', '${myToken}')" class="w-full ${ready ? 'bg-rose-600' : 'bg-emerald-600'} py-2.5 rounded-xl font-bold">${ready ? '준비 취소' : '준비 완료'}</button>`;
                 }
             }
 
@@ -171,7 +177,6 @@
                 document.getElementById('my-money').innerText = me.money + 'P';
                 document.getElementById('my-score').innerText = me.score + '점';
                 
-                // 입찰 버튼 및 입력창 상태 제어 (핵심 수정)
                 const input = document.getElementById('bid-input');
                 const btn = document.getElementById('bid-btn');
                 if (state.roomStatus === 'bidding' && me.bid === null) {
@@ -219,13 +224,13 @@
         function submitBid() {
             const val = parseInt(document.getElementById('bid-input').value);
             if (isNaN(val)) return;
-            socket.emit('submit_bid', val);
+            socket.emit('submit_bid', { bidAmount: val, token: getMyToken() });
         }
 
         function sendChat() {
             const input = document.getElementById('chat-input');
             if (!input.value.trim()) return;
-            socket.emit('send_chat', input.value);
+            socket.emit('send_chat', { msg: input.value, token: getMyToken() });
             input.value = '';
         }
     </script>
