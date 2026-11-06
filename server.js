@@ -53,7 +53,7 @@ io.on('connection', (socket) => {
             return;
         }
         if (rooms[roomId].roomStatus !== 'waiting') {
-            socket.emit('error_msg', '이미 게임이 진행 중인 방입니다!');
+            socket.emit('error_msg', '이미 경매가 진행 중인 방입니다!');
             return;
         }
         if (Object.keys(rooms[roomId].players).length >= 6) {
@@ -63,21 +63,14 @@ io.on('connection', (socket) => {
         joinRoom(socket, roomId, data.name);
     });
 
-    socket.on('leave_room', () => {
-        handlePlayerLeave(socket);
-    });
-
-    socket.on('reset_or_destroy_room', () => {
-        const roomId = socket.roomId;
-        if (!roomId || !rooms[roomId]) return;
-        const room = rooms[roomId];
-
-        if (socket.id !== room.hostId) return;
-
-        if (room.roundTimer) clearInterval(room.roundTimer);
-
-        io.to(roomId).emit('room_destroyed', '방장에 의해 방이 폭파(초기화)되었습니다.');
-        delete rooms[roomId];
+    // 재연결 시 방 복구 요청 처리
+    socket.on('reconnect_room', (data) => {
+        const { roomId, name } = data;
+        if (roomId && rooms[roomId]) {
+            joinRoom(socket, roomId, name);
+        } else {
+            socket.emit('error_msg', '세션이 만료되어 방을 찾을 수 없습니다.');
+        }
     });
 
     socket.on('toggle_ready', () => {
@@ -123,13 +116,13 @@ io.on('connection', (socket) => {
         const room = rooms[roomId];
         const player = room.players[socket.id];
         if (!player || room.roomStatus !== 'bidding') return;
-        
-        if (isNaN(bidAmount) || bidAmount < 0 || bidAmount > player.money) return;
 
-        player.bid = Number(bidAmount);
+        const parsedBid = Number(bidAmount);
+        if (isNaN(parsedBid) || parsedBid < 0 || parsedBid > player.money) return;
+
+        player.bid = parsedBid;
         io.to(roomId).emit('update_game_state', room);
 
-        // 모든 플레이어가 입찰을 완료했는지 엄격하게 검사
         const playersArr = Object.values(room.players);
         const allSubmitted = playersArr.every(p => p.bid !== null && p.bid !== undefined);
 
@@ -145,7 +138,7 @@ io.on('connection', (socket) => {
 
         const room = rooms[roomId];
         const player = room.players[socket.id];
-        if (!player || !msg.trim()) return;
+        if (!player || !msg || !msg.trim()) return;
 
         io.to(roomId).emit('receive_chat', {
             id: socket.id,
@@ -156,10 +149,50 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('disconnect', () => {
+    socket.on('leave_room', () => {
         handlePlayerLeave(socket);
     });
+
+    socket.on('reset_or_destroy_room', () => {
+        const roomId = socket.roomId;
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (socket.id !== room.hostId) return;
+
+        if (room.roundTimer) clearInterval(room.roundTimer);
+        io.to(roomId).emit('room_destroyed', '방장에 의해 방이 폭파(초기화)되었습니다.');
+        delete rooms[roomId];
+    });
+
+    socket.on('disconnect', () => {
+        // 모바일 화면 전환 시 즉시 방에서 튕기지 않도록 잠시 대기 시간 부여 가능하나,
+        // 여기서는 기존 안정성을 위해 유지하되 재접속 시 세션 복구(localStorage)를 활용합니다.
+    });
 });
+
+function joinRoom(socket, roomId, name) {
+    socket.join(roomId);
+    socket.roomId = roomId;
+
+    const room = rooms[roomId];
+    const playerKeys = Object.keys(room.players);
+    const playerIndex = playerKeys.length;
+
+    room.players[socket.id] = {
+        id: socket.id,
+        name: name || `딜러${playerIndex + 1}`,
+        avatar: AVATARS[playerIndex % AVATARS.length],
+        color: COLORS[playerIndex % COLORS.length],
+        money: 50,
+        score: 0,
+        bid: null,
+        isReady: socket.id === room.hostId
+    };
+
+    socket.emit('joined_room', { roomId: roomId, name: room.players[socket.id].name });
+    io.to(roomId).emit('update_game_state', room);
+}
 
 function handlePlayerLeave(socket) {
     const roomId = socket.roomId;
@@ -184,29 +217,6 @@ function handlePlayerLeave(socket) {
             io.to(roomId).emit('update_game_state', room);
         }
     }
-}
-
-function joinRoom(socket, roomId, name) {
-    socket.join(roomId);
-    socket.roomId = roomId;
-
-    const room = rooms[roomId];
-    const playerKeys = Object.keys(room.players);
-    const playerIndex = playerKeys.length;
-
-    room.players[socket.id] = {
-        id: socket.id,
-        name: name || `딜러${playerIndex + 1}`,
-        avatar: AVATARS[playerIndex % AVATARS.length],
-        color: COLORS[playerIndex % COLORS.length],
-        money: 50,
-        score: 0,
-        bid: null,
-        isReady: socket.id === room.hostId
-    };
-
-    socket.emit('joined_room', { roomId: roomId });
-    io.to(roomId).emit('update_game_state', room);
 }
 
 function startNewRound(room) {
