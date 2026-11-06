@@ -114,8 +114,6 @@ io.on('connection', (socket) => {
 
 function handleLogin(socket, roomId, name, token) {
     const room = rooms[roomId];
-    
-    // 클라이언트가 보낸 토큰이 없거나 유효하지 않으면 새로 생성, 있으면 그대로 사용
     let playerToken = token;
     if (!playerToken) {
         playerToken = 'tok_' + Math.random().toString(36).substring(2, 9);
