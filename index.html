@@ -7,11 +7,11 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-between p-4 font-sans">
+<body class="bg-slate-900 text-slate-100 min-h-screen flex flex-col items-center justify-between p-2 sm:p-4 font-sans overflow-x-hidden">
 
     <!-- 1. 로비 / 방 생성 및 참가 화면 -->
     <div id="login-screen" class="fixed inset-0 bg-slate-950 flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl space-y-5">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl space-y-5">
             <div>
                 <h1 class="text-3xl font-black text-amber-400 mb-1">🎨 블라인드 마켓</h1>
                 <p class="text-xs text-slate-400">아트 갤러리 밀봉 경매 & 심리전</p>
@@ -36,79 +36,81 @@
     </div>
 
     <!-- 2. 통합 게임방 화면 -->
-    <div id="game-screen" class="w-full max-w-3xl flex-1 flex flex-col gap-3 my-2 hidden">
+    <div id="game-screen" class="w-full max-w-3xl flex-1 flex flex-col gap-2.5 my-1 hidden">
         
-        <header class="bg-slate-800/95 backdrop-blur border border-slate-700 rounded-2xl p-4 shadow-lg flex flex-col gap-3">
-            <div class="flex justify-between items-center">
-                <div>
-                    <div class="flex items-center gap-2">
-                        <h1 class="text-lg font-black text-amber-400 tracking-wider">🎨 블라인드 마켓</h1>
+        <header class="bg-slate-800/95 backdrop-blur border border-slate-700 rounded-2xl p-3 sm:p-4 shadow-lg flex flex-col gap-2.5">
+            <div class="flex flex-wrap justify-between items-center gap-2">
+                <div class="flex flex-col">
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <h1 class="text-base sm:text-lg font-black text-amber-400 tracking-wider">🎨 블라인드 마켓</h1>
                         <span id="room-code-badge" class="bg-slate-900 border border-slate-700 text-amber-300 text-[10px] px-2 py-0.5 rounded-md font-mono font-bold">방 코드: ------</span>
-                        <button onclick="copyInviteLink()" class="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-0.5 rounded-md font-bold transition">초대링크 복사 🔗</button>
+                        <button onclick="copyInviteLink()" class="text-[10px] bg-indigo-600 hover:bg-indigo-500 text-white px-2 py-1 rounded-md font-bold transition">초대링크 복사 🔗</button>
+                        <button onclick="leaveRoom()" class="text-[10px] bg-rose-600 hover:bg-rose-500 text-white px-2 py-1 rounded-md font-bold transition">방 나가기 🚪</button>
                     </div>
                     <div class="flex items-center gap-2 mt-1">
                         <p id="round-title" class="text-xs text-slate-400">참가자 준비 대기 중...</p>
                         <span id="timer-badge" class="hidden bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[10px] px-2 py-0.5 rounded-full font-bold">⏱️ 05:00</span>
                     </div>
                 </div>
-                <div class="flex gap-3">
-                    <div class="bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-700 text-right">
-                        <span class="text-[10px] text-slate-400 block">내 자금</span>
-                        <span id="my-money" class="text-base font-bold text-emerald-400">50 P</span>
+                
+                <div class="flex gap-2">
+                    <div class="bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-700 text-right min-w-[70px]">
+                        <span class="text-[9px] text-slate-400 block">내 자금</span>
+                        <span id="my-money" class="text-sm sm:text-base font-bold text-emerald-400">50 P</span>
                     </div>
-                    <div class="bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-700 text-right">
-                        <span class="text-[10px] text-slate-400 block">내 점수</span>
-                        <span id="my-score" class="text-base font-bold text-amber-300">0 점</span>
+                    <div class="bg-slate-900 px-2.5 py-1.5 rounded-xl border border-slate-700 text-right min-w-[70px]">
+                        <span class="text-[9px] text-slate-400 block">내 점수</span>
+                        <span id="my-score" class="text-sm sm:text-base font-bold text-amber-300">0 점</span>
                     </div>
                 </div>
             </div>
-            <div id="players-status-bar" class="flex gap-2 overflow-x-auto pt-1 border-t border-slate-700/60"></div>
+            <div id="players-status-bar" class="flex gap-2 overflow-x-auto pt-1 border-t border-slate-700/60 pb-1"></div>
         </header>
 
-        <div id="roadmap-wrapper" class="bg-slate-800/50 border border-slate-700/80 rounded-xl p-2.5 hidden">
+        <div id="roadmap-wrapper" class="bg-slate-800/50 border border-slate-700/80 rounded-xl p-2 hidden">
             <div id="roadmap-bar" class="flex gap-1.5 overflow-x-auto pb-1"></div>
         </div>
 
-        <div id="center-display-area" class="bg-gradient-to-b from-slate-800 to-slate-850 border-2 border-slate-700 rounded-2xl p-6 flex flex-col items-center justify-center text-center relative shadow-xl min-h-[180px]">
-            <div id="waiting-control-panel" class="flex flex-col items-center gap-4 w-full">
-                <h2 id="room-master-notice" class="text-base font-bold text-amber-300">모든 플레이어가 준비하면 시작할 수 있습니다!</h2>
-                <div id="action-buttons-container" class="flex gap-3 w-full max-w-xs"></div>
+        <div id="center-display-area" class="bg-gradient-to-b from-slate-800 to-slate-850 border-2 border-slate-700 rounded-2xl p-5 flex flex-col items-center justify-center text-center relative shadow-xl min-h-[160px]">
+            <div id="waiting-control-panel" class="flex flex-col items-center gap-3 w-full">
+                <h2 id="room-master-notice" class="text-sm sm:text-base font-bold text-amber-300 px-2">모든 플레이어가 준비하면 시작할 수 있습니다!</h2>
+                <div id="action-buttons-container" class="flex flex-col sm:flex-row gap-2 w-full max-w-sm"></div>
             </div>
 
             <div id="auction-display-panel" class="hidden flex flex-col items-center w-full">
                 <span id="item-category" class="absolute top-3 left-3 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">공개 미술품</span>
                 <div class="my-2">
-                    <h2 id="item-name" class="text-2xl font-black text-white mb-1">모네의 수련 🖼️</h2>
+                    <h2 id="item-name" class="text-xl sm:text-2xl font-black text-white mb-1">모네의 수련 🖼️</h2>
                     <p id="item-desc" class="text-xs text-slate-400">안정적인 가치를 지닌 진품 미술품 (+10점)</p>
                 </div>
                 <div id="announcement-box" class="hidden mt-2 text-amber-300 font-bold text-xs bg-amber-500/10 border border-amber-500/30 px-4 py-1.5 rounded-lg"></div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex flex-col justify-between shadow-lg">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 flex-1">
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3.5 flex flex-col justify-between shadow-lg">
                 <div>
                     <div class="flex justify-between items-center mb-2">
                         <label class="text-xs font-semibold text-slate-300">비밀 입찰 금액 (0원 입력 시 기권)</label>
                         <span id="bid-status-text" class="text-xs text-slate-500 font-bold">게임 대기 중</span>
                     </div>
-                    <div class="flex gap-2 mb-3">
+                    <div class="flex gap-2 mb-2">
                         <input type="number" id="bid-input" min="0" value="10" disabled
-                            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-lg font-bold text-white opacity-50 focus:outline-none">
+                            class="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-4 py-2.5 text-base sm:text-lg font-bold text-white opacity-50 focus:outline-none">
                         <button onclick="submitBid()" id="bid-btn" disabled
-                            class="bg-indigo-600 text-white font-bold px-5 py-3 rounded-xl transition opacity-50 cursor-not-allowed">
+                            class="bg-indigo-600 text-white font-bold px-4 py-2.5 rounded-xl transition opacity-50 cursor-not-allowed text-sm">
                             제출 🤫
                         </button>
                     </div>
                 </div>
-                <div class="text-[11px] text-slate-400 bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
-                    💡 방장이 게임을 시작하면 입찰이 활성화됩니다!
+                <div class="text-[10px] sm:text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-xl border border-slate-700/60">
+                    💡 다른 사람의 입찰가는 보이지 않습니다. 채팅창으로 심리전을 시전하세요!
                 </div>
             </div>
 
-            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-4 flex flex-col h-48 md:h-auto shadow-lg">
+            <div class="bg-slate-800 border border-slate-700 rounded-2xl p-3.5 flex flex-col h-40 sm:h-48 md:h-auto shadow-lg">
                 <h3 class="text-xs font-bold text-slate-400 mb-2">💬 갤러리 대기실 채팅</h3>
-                <div id="chat-messages" class="flex-1 overflow-y-auto text-xs space-y-2.5 pr-1 mb-2 max-h-36 flex flex-col">
+                <div id="chat-messages" class="flex-1 overflow-y-auto text-xs space-y-2 pr-1 mb-2 max-h-32 sm:max-h-40 flex flex-col">
                     <p class="text-slate-500 text-[11px] text-center">입장 완료! 심리전을 시작하세요.</p>
                 </div>
                 <div class="flex gap-1.5">
@@ -123,8 +125,8 @@
 
     <!-- 3. 게임 종료 모달 -->
     <div id="game-over-modal" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div class="bg-slate-800 border border-slate-700 rounded-3xl p-8 max-w-md w-full text-center shadow-2xl space-y-4">
-            <h2 class="text-3xl font-black text-amber-400">🏆 갤러리 경매 종료!</h2>
+        <div class="bg-slate-800 border border-slate-700 rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl space-y-4">
+            <h2 class="text-2xl sm:text-3xl font-black text-amber-400">🏆 갤러리 경매 종료!</h2>
             <div id="final-scoreboard" class="bg-slate-900/80 rounded-2xl p-4 text-left space-y-2"></div>
             <button onclick="location.href='/'" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition">
                 로비로 돌아가기 🔄
@@ -173,11 +175,32 @@
             socket.emit('join_room', { name: name, roomId: roomId });
         }
 
+        function leaveRoom() {
+            if (confirm('정말 방을 나가시겠습니까?')) {
+                socket.emit('leave_room');
+            }
+        }
+
+        function destroyRoom() {
+            if (confirm('방을 폭파하고 초기화하시겠습니까? 모든 플레이어가 로비로 튕깁니다.')) {
+                socket.emit('reset_or_destroy_room');
+            }
+        }
+
         socket.on('joined_room', (data) => {
             currentRoomId = data.roomId;
             document.getElementById('login-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('room-code-badge').innerText = `방 코드: ${currentRoomId}`;
+        });
+
+        socket.on('left_room', () => {
+            location.href = '/';
+        });
+
+        socket.on('room_destroyed', (msg) => {
+            alert(msg);
+            location.href = '/';
         });
 
         function copyInviteLink() {
@@ -254,7 +277,7 @@
                 }
 
                 return `
-                    <div class="bg-slate-900/80 border border-slate-700/60 px-3 py-1.5 rounded-xl flex items-center gap-2 flex-shrink-0 text-xs">
+                    <div class="bg-slate-900/80 border border-slate-700/60 px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 flex-shrink-0 text-xs">
                         <span>${p.avatar}</span>
                         <span class="font-bold ${p.color}">${p.name}</span>
                         <span class="text-emerald-400 font-semibold">${p.money}P</span>
@@ -269,8 +292,11 @@
                 if (isHost) {
                     document.getElementById('room-master-notice').innerText = '방장입니다. 모든 인원이 준비하면 시작하세요!';
                     actionContainer.innerHTML = `
-                        <button onclick="startGame()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition shadow-lg">
+                        <button onclick="startGame()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl transition shadow-lg text-sm">
                             게임 시작하기 🚀
+                        </button>
+                        <button onclick="destroyRoom()" class="bg-rose-600 hover:bg-rose-500 text-white font-bold px-4 py-3 rounded-xl transition shadow-lg text-sm">
+                            방 폭파 💣
                         </button>
                     `;
                 } else {
@@ -278,7 +304,7 @@
                     const readyText = myPlayer && myPlayer.isReady ? '준비 취소 ❌' : '게임 준비 ✅';
                     const readyClass = myPlayer && myPlayer.isReady ? 'bg-rose-600 hover:bg-rose-500' : 'bg-emerald-600 hover:bg-emerald-500';
                     actionContainer.innerHTML = `
-                        <button onclick="toggleReady()" class="w-full ${readyClass} text-white font-bold py-3 rounded-xl transition shadow-lg">
+                        <button onclick="toggleReady()" class="w-full ${readyClass} text-white font-bold py-3 rounded-xl transition shadow-lg text-sm">
                             ${readyText}
                         </button>
                     `;
@@ -363,9 +389,9 @@
                 if (idx === currentIdx) bg = 'bg-indigo-600/30 border-indigo-500 text-white ring-2 ring-indigo-500';
 
                 return `
-                    <div class="flex-shrink-0 w-14 h-12 rounded-lg border flex flex-col items-center justify-center text-[10px] font-bold ${bg}">
+                    <div class="flex-shrink-0 w-12 h-10 sm:w-14 sm:h-12 rounded-lg border flex flex-col items-center justify-center text-[9px] sm:text-[10px] font-bold ${bg}">
                         <span>R.${item.round}</span>
-                        <span class="text-[8px] opacity-80">${item.type === 'highlight' ? '🔥최종' : item.type.toUpperCase()}</span>
+                        <span class="text-[7px] sm:text-[8px] opacity-80">${item.type === 'highlight' ? '🔥최종' : item.type.toUpperCase()}</span>
                     </div>
                 `;
             }).join('');
