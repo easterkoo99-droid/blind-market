@@ -63,12 +63,10 @@ io.on('connection', (socket) => {
         joinRoom(socket, roomId, data.name);
     });
 
-    // 방 나가기
     socket.on('leave_room', () => {
         handlePlayerLeave(socket);
     });
 
-    // 방 폭파 또는 게임 초기화 (방장 전용)
     socket.on('reset_or_destroy_room', () => {
         const roomId = socket.roomId;
         if (!roomId || !rooms[roomId]) return;
@@ -78,7 +76,6 @@ io.on('connection', (socket) => {
 
         if (room.roundTimer) clearInterval(room.roundTimer);
 
-        // 방에 있는 모든 플레이어에게 방이 폭파되었음을 알림
         io.to(roomId).emit('room_destroyed', '방장에 의해 방이 폭파(초기화)되었습니다.');
         delete rooms[roomId];
     });
@@ -129,11 +126,12 @@ io.on('connection', (socket) => {
         
         if (isNaN(bidAmount) || bidAmount < 0 || bidAmount > player.money) return;
 
-        player.bid = bidAmount;
+        player.bid = Number(bidAmount);
         io.to(roomId).emit('update_game_state', room);
 
+        // 모든 플레이어가 입찰을 완료했는지 엄격하게 검사
         const playersArr = Object.values(room.players);
-        const allSubmitted = playersArr.every(p => p.bid !== null);
+        const allSubmitted = playersArr.every(p => p.bid !== null && p.bid !== undefined);
 
         if (allSubmitted) {
             if (room.roundTimer) clearInterval(room.roundTimer);
